@@ -1,0 +1,20 @@
+# E2: YOLO-seg, linear_defect (crack + scratch), COCO-pretrained.
+exp_id: E2
+track: A
+model: yolo26s-seg.pt        # small checkpoint; yolo11s-seg.pt is a drop-in alternative
+dataset: linear              # linear -> processed/glass_merged_linear, merged -> processed/glass_merged_seg
+weighting: balanced          # all | balanced | no_augpairs. Fixed once here for every Phase 2-4 comparison.
+pretrain: coco
+seed: 0
+notes: ""
+train:                       # passed straight to ultralytics YOLO.train()
+  epochs: 150
+  imgsz: 640
+  batch: 16
+  patience: 40
+  cos_lr: true
+  close_mosaic: 15
+  flipud: 0.5                # glass has no up/down; Roboflow pairs already include flips, which is harmless
+  fliplr: 0.5
+  degrees: 0.0
+  workers: 4

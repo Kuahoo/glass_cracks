@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Data and run outputs live outside git (Drive / DATA_ROOT / OUT_ROOT)
+temp/glass_crack_dataset_bundle/
+temp/*.zip
+outputs/
+runs/
+*.pt
+*.pth
+*.onnx
+wandb/

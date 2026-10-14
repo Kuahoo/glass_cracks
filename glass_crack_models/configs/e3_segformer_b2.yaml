@@ -1,0 +1,7 @@
+# E3 variant: SegFormer-B2 (MiT-B2 encoder). Heavier; better suited to Stage B (cluster) or a long Colab session.
+base: e3_unet_r34.yaml
+exp_id: E3-segformer
+arch: segformer
+encoder: mit_b2
+lr: 1.0e-4
+batch: 8

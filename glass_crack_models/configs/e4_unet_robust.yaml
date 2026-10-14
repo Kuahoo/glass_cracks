@@ -1,0 +1,5 @@
+# E4 starting point (Phase 4, step 1) if Track B wins.
+base: e3_unet_r34.yaml
+exp_id: E4
+aug: robust
+notes: "scale/appearance aug"

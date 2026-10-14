@@ -1,0 +1,21 @@
+# E3: U-Net with ResNet34 encoder, linear_defect, BCE + Dice, ImageNet-pretrained encoder.
+exp_id: E3
+track: B
+arch: unet                   # unet | unetplusplus | segformer
+encoder: resnet34
+encoder_weights: imagenet
+pretrain: imagenet
+weighting: balanced          # all | balanced | no_augpairs (Roboflow pair copies get half weight when balanced)
+loss: bce_dice               # bce_dice | bce_tversky | bce_dice_cldice
+aug: base                    # base | robust (Phase 4: downscale jitter, JPEG, motion blur, colour)
+imgsz: 640
+epochs: 120
+batch: 8
+lr: 3.0e-4
+weight_decay: 1.0e-4
+warmup_epochs: 2
+patience: 30
+amp: true
+workers: 2                   # Colab has 2 CPU cores
+seed: 0
+notes: ""

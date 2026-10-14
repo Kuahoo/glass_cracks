@@ -1,0 +1,5 @@
+# E1: YOLO-seg, 4 classes (bubble, crack, inclusion, scratch), COCO-pretrained. Reference run.
+# Evaluation scores crack OR scratch as linear_defect, so E1 and E2 share one metric.
+base: e2_yolo_linear.yaml
+exp_id: E1
+dataset: merged

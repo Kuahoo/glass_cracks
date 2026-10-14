@@ -1,0 +1,4 @@
+# E3 ablation: Tversky (alpha 0.3, beta 0.7) instead of Dice, to weight missed thin pixels more.
+base: e3_unet_r34.yaml
+exp_id: E3-tversky
+loss: bce_tversky

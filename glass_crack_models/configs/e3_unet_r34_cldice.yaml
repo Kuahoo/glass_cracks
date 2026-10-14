@@ -1,0 +1,4 @@
+# E3 ablation: BCE + Dice + 0.5 x soft clDice (topology-preserving loss for thin structures).
+base: e3_unet_r34.yaml
+exp_id: E3-cldice
+loss: bce_dice_cldice
