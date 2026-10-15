@@ -82,6 +82,7 @@ def main(argv=None):
     ap.add_argument("--epochs", type=int, default=None, help="Override config (and the smoke default of 1)")
     ap.add_argument("--fresh", action="store_true", help="Ignore an existing last.pth")
     ap.add_argument("--no-eval", action="store_true")
+    ap.add_argument("--workers", type=int, default=None, help="Override config DataLoader workers")
     ap.add_argument("--compute-units", default="")
     args = ap.parse_args(argv)
 
@@ -103,6 +104,8 @@ def main(argv=None):
     if not (data_dir / "manifest.csv").exists():
         raise FileNotFoundError(f"{data_dir} missing: run `python -m glass_crack_models.data.relabel_classes` first")
     imgsz, epochs, batch, workers = int(cfg["imgsz"]), int(cfg["epochs"]), int(cfg["batch"]), int(cfg.get("workers", 4))
+    if args.workers is not None:
+        workers = args.workers
     train_imgs, weights = train_images_and_weights(data_dir, cfg.get("weighting", "balanced"))
     valid_imgs = image_paths(data_dir / "valid")
     if args.smoke:

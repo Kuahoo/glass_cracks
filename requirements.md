@@ -35,6 +35,14 @@ pip install -q \
   pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0
 ```
 
+## SDSU TIDE JupyterHub (GPU)
+
+Use the **PyTorch Notebook** image; its CUDA `torch`/`torchvision` are kept. `scripts/tide/setup.sh` creates `~/glass_crack/venv` with `--system-site-packages` (so it sees the image's torch) and installs the same pins as the Colab line above. Packages installed outside `$HOME` disappear when the server restarts, which is why the venv lives there.
+
+```sh
+bash ~/glass_crack/cracked/scripts/tide/setup.sh
+```
+
 ## What each package is for
 
 | Package | Used for |

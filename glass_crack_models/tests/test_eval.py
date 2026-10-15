@@ -72,6 +72,32 @@ class MatchTests(unittest.TestCase):
         self.assertEqual((m.tp, m.fp, m.fn), (1, 1, 0))
         self.assertEqual(m.pairs[0][0], 1)  # the high-score prediction took the GT
 
+    def test_merged_prediction_credits_touching_gts(self):
+        a, b = line_mask(100, 100, (10, 50), (50, 50)), line_mask(100, 100, (50, 50), (90, 20))
+        gts = [region_from_mask(a), region_from_mask(b)]
+        pr = region_from_mask(a | b)
+        for strict in (False, True):
+            m = match([pr], gts, strict=strict)
+            self.assertEqual((m.tp, m.tp_pred, m.fp, m.fn), (2, 1, 0, 0))
+
+    def test_nested_gt_is_credited(self):
+        outer = region_from_mask(box_mask(100, 100, 10, 10, 60, 20))
+        inner = region_from_mask(box_mask(100, 100, 20, 12, 30, 18))
+        m = match([outer], [outer, inner])
+        self.assertEqual((m.tp, m.tp_pred, m.fp, m.fn), (2, 1, 0, 0))
+
+    def test_neighbour_gt_not_stolen(self):
+        a = region_from_mask(box_mask(100, 100, 10, 10, 40, 14))
+        b = region_from_mask(box_mask(100, 100, 10, 16, 40, 20))  # 2 px gap: touches after dilation
+        m = match([a, b], [a, b])
+        self.assertEqual((m.tp, m.tp_pred, m.fp, m.fn), (2, 2, 0, 0))
+
+    def test_blob_touching_two_gts_credits_one(self):
+        gts = [region_from_mask(box_mask(100, 100, 10, 10, 14, 14)), region_from_mask(box_mask(100, 100, 80, 80, 84, 84))]
+        blob = region_from_mask(box_mask(100, 100, 12, 12, 82, 82))  # IoU with the GT union is tiny
+        m = match([blob], gts)
+        self.assertEqual((m.tp, m.tp_pred, m.fp, m.fn), (1, 1, 0, 1))
+
     def test_strict_iou_half(self):
         gt = region_from_mask(box_mask(100, 100, 0, 0, 20, 20))
         pr = region_from_mask(box_mask(100, 100, 0, 0, 20, 12))  # IoU 0.6
@@ -107,6 +133,16 @@ class MetricTests(unittest.TestCase):
         s[5:10, 5:25] = 0.9
         rec = M.image_record(s, [crack, scratch], 0.5, "linear", crack_label=1)
         self.assertEqual((rec["gt_crack"], rec["tp_crack"], rec["fn"]), (1, 1, 1))
+
+    def test_merged_prediction_precision_counts_predictions(self):
+        h = w = 100
+        a, b = line_mask(h, w, (10, 50), (50, 50)), line_mask(h, w, (50, 50), (90, 20))
+        s = np.zeros((h, w), np.float32)
+        s[a | b] = 0.9
+        s[5:10, 80:95] = 0.8  # FP
+        summ = M.summarize([M.image_record(s, [region_from_mask(a), region_from_mask(b)], 0.5, "linear")])
+        self.assertAlmostEqual(summ["recall"], 1.0)
+        self.assertAlmostEqual(summ["precision"], 0.5)  # 1 matched prediction, 1 FP
 
 
 class BootstrapTests(unittest.TestCase):

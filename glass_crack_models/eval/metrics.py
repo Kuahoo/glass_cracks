@@ -23,8 +23,8 @@ def image_record(score_map: np.ndarray, gts: list[Region], thr: float, slice_tag
     pm, gm = union_mask(preds, h, w), union_mask(gts, h, w)
     rec = {
         "images": 1, "gt": len(gts), "pred": len(preds),
-        "tp": lenient.tp, "fp": lenient.fp, "fn": lenient.fn,
-        "tp_strict": strict.tp, "fp_strict": strict.fp, "fn_strict": strict.fn,
+        "tp": lenient.tp, "fp": lenient.fp, "fn": lenient.fn, "tp_pred": lenient.tp_pred,
+        "tp_strict": strict.tp, "fp_strict": strict.fp, "fn_strict": strict.fn, "tp_pred_strict": strict.tp_pred,
         "inter": int(np.logical_and(pm, gm).sum()), "union": int(np.logical_or(pm, gm).sum()),
         f"images_{slice_tag}": 1, f"fp_{slice_tag}": lenient.fp,
     }
@@ -45,9 +45,17 @@ def _div(a, b):
 
 
 def recall(s): return _div(s["tp"], s["tp"] + s["fn"])
-def precision(s): return _div(s["tp"], s["tp"] + s["fp"])
+def precision(s):
+    tp = s.get("tp_pred", s["tp"])
+    return _div(tp, tp + s["fp"])
+
+
 def strict_recall(s): return _div(s.get("tp_strict", 0), s.get("tp_strict", 0) + s.get("fn_strict", 0))
-def strict_precision(s): return _div(s.get("tp_strict", 0), s.get("tp_strict", 0) + s.get("fp_strict", 0))
+
+
+def strict_precision(s):
+    tp = s.get("tp_pred_strict", s.get("tp_strict", 0))
+    return _div(tp, tp + s.get("fp_strict", 0))
 def mask_iou(s): return _div(s["inter"], s["union"])
 def fp_per_100(s): return 100 * _div(s["fp"], s["images"])
 

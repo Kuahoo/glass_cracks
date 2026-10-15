@@ -63,6 +63,10 @@ wandb/
 # Model weights / checkpoints
 *.ckpt
 *.onnx
+*.pt
+*.pth
+/data/
+/outputs/
 
 # Large dataset folders
 

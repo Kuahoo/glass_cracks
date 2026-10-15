@@ -2,7 +2,10 @@
 
 Lenient (headline): a prediction matches a GT instance if mask IoU >= 0.3, or if the two masks
 overlap after both are dilated by 3 px. Strict: mask IoU >= 0.5 only.
-Matching is greedy and one-to-one, predictions taken in descending score order.
+Matching is greedy, predictions taken in descending score order. Each GT is matched at most once.
+A prediction normally claims one GT; it claims every free GT it matches when its IoU with the union of
+those GTs reaches the same IoU threshold (one connected prediction over touching GT instances).
+`tp` counts matched GTs (recall), `tp_pred` counts matched predictions (precision).
 """
 from __future__ import annotations
 
@@ -17,9 +20,10 @@ from glass_crack_models.protocol import MATCH_DILATE_PX, MATCH_IOU, STRICT_IOU
 
 @dataclass
 class MatchResult:
-    tp: int
+    tp: int  # matched GTs
     fp: int
     fn: int
+    tp_pred: int = 0  # matched predictions
     pairs: list[tuple[int, int, float]] = field(default_factory=list)  # (pred idx, gt idx, iou)
     unmatched_pred: list[int] = field(default_factory=list)
     unmatched_gt: list[int] = field(default_factory=list)
@@ -49,25 +53,56 @@ def pair_stats(a: Region, b: Region, dilate: int = MATCH_DILATE_PX) -> tuple[flo
     return iou, near
 
 
+def union_iou(pred: Region, gts: list[Region]) -> float:
+    x0, y0 = min([pred.x0] + [g.x0 for g in gts]), min([pred.y0] + [g.y0 for g in gts])
+    x1, y1 = max([pred.x1] + [g.x1 for g in gts]), max([pred.y1] + [g.y1 for g in gts])
+    pm = pred.window(x0, y0, x1, y1)
+    gm = np.zeros_like(pm)
+    for g in gts:
+        gm |= g.window(x0, y0, x1, y1)
+    union = int(np.logical_or(pm, gm).sum())
+    return int(np.logical_and(pm, gm).sum()) / union if union else 0.0
+
+
 def match(preds: list[Region], gts: list[Region], strict: bool = False,
           iou_thr: float | None = None, dilate: int = MATCH_DILATE_PX) -> MatchResult:
     iou_thr = (STRICT_IOU if strict else MATCH_IOU) if iou_thr is None else iou_thr
     order = sorted(range(len(preds)), key=lambda i: -preds[i].score)
     free = set(range(len(gts)))
-    pairs, unmatched_pred = [], []
+    pairs, unmatched_pred, tp_pred = [], [], 0
     for pi in order:
-        best = None
-        for gi in free:
-            iou, near = pair_stats(preds[pi], gts[gi], 0 if strict else dilate)
-            ok = iou >= iou_thr or (not strict and near > 0)
+        pred = preds[pi]
+        touching = {}
+        for gi in sorted(free):
+            iou, near = pair_stats(pred, gts[gi], 0 if strict else dilate)
+            if near > 0:
+                touching[gi] = (iou, near)
+        claimed = []
+        if len(touching) > 1:
+            # Grow a GT group while the prediction's IoU with the group union does not drop
+            # (ties admit GTs nested inside already-claimed ones).
+            group = [max(touching, key=touching.get)]
+            cur = touching[group[0]][0]
+            rest = [gi for gi in touching if gi != group[0]]
+            while rest:
+                val, gi = max((union_iou(pred, [gts[g] for g in group + [c]]), c) for c in rest)
+                if val < cur:
+                    break
+                group.append(gi)
+                rest.remove(gi)
+                cur = val
+            if len(group) > 1 and cur >= iou_thr:
+                claimed = group
+        if not claimed:
+            ok = [gi for gi, (iou, near) in touching.items() if iou >= iou_thr or not strict]
             if ok:
-                key = (iou, near)
-                if best is None or key > best[0]:
-                    best = (key, gi)
-        if best is None:
+                claimed = [max(ok, key=touching.get)]
+        if not claimed:
             unmatched_pred.append(pi)
-        else:
-            free.discard(best[1])
-            pairs.append((pi, best[1], best[0][0]))
-    return MatchResult(tp=len(pairs), fp=len(unmatched_pred), fn=len(free), pairs=pairs,
+            continue
+        for gi in claimed:
+            free.discard(gi)
+            pairs.append((pi, gi, touching[gi][0]))
+        tp_pred += 1
+    return MatchResult(tp=len(pairs), fp=len(unmatched_pred), fn=len(free), tp_pred=tp_pred, pairs=pairs,
                        unmatched_pred=unmatched_pred, unmatched_gt=sorted(free))

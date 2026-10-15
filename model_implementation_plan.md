@@ -39,7 +39,7 @@ Access to the SDSU cluster / DGX has been requested and may take a while. The pl
 
 | | Stage A (now) | Stage B (when cluster access arrives) |
 |---|---|---|
-| Where | Colab Pro for training; laptop (16 CPU cores, 30 GB RAM, no CUDA GPU) for code, unit tests, CUBIT tiling and small `predict.py` checks; Kaggle as overflow | SDSU cluster / DGX |
+| Where | Colab Pro for training; laptop (16 CPU cores, 30 GB RAM, no CUDA GPU) for code, unit tests, CUBIT tiling and small `predict.py` checks; Kaggle as overflow | SDSU TIDE research JupyterHub, https://jupyterhub-research.sdsu.edu (access granted 2026-10-14; NVIDIA L40 / A100, 75 GiB persistent `/home/jovyan`; live GPU availability at https://nrp.ai/viz/resources/, filter `rci-tide`). Session steps: `notebooks/tide_setup.ipynb` |
 | What | Phases 0-3 and E1-E3: environment, support code, baselines, first `predict.py`; a small CUBIT tiling pilot | Full CUBIT pretraining (E5-E6), multi-seed reruns, SegFormer and other larger models, ablations, company-data fine-tuning (E7) |
 | Seeds | 1 per config, then 3 for the top two | 3+ for everything that is compared |
 | CUBIT budget | Pilot only (a few thousand tiles) to measure speed and storage | Large tile budget; try more than one tile size |
@@ -49,6 +49,12 @@ Access to the SDSU cluster / DGX has been requested and may take a while. The pl
 - Everything is driven by a config file and a script (`python train_*.py --config ...`), and every run is resumable.
 - Keep package pins in `requirements.md` (uv commands for the laptop, a pip line for Colab). If the DGX uses containers, a short Dockerfile based on the same pins is enough. A Slurm job template can be written once you know the scheduler.
 - Results append to `results/results.csv` in the same format on both stages, so runs from Colab and the cluster land in one table.
+
+**Stage B on TIDE (JupyterHub, PyTorch Notebook image)**
+- Only `/home/jovyan` (75 GiB) persists; the container reverts everything else (apt/pip/conda installs in the default environment) when the server stops. `scripts/tide/env.sh` puts code, data, a venv (inherits the image's CUDA `torch`), weight caches and outputs under `~/glass_crack/`; `scripts/tide/setup.sh` is the idempotent setup.
+- The server stops after 12 hours with no browser connected to the hub. Long runs go through `scripts/tide/job.sh start <name> <module> ...` (background, log in `outputs/logs/`), so a closed tab or kernel restart does not stop training; reconnect within 12 hours. If the server stops anyway, start the same job again and it resumes.
+- DataLoader workers are sized from the server's CPU quota and `/dev/shm` (`WORKERS`; 0 if `/dev/shm` is the 64 MB default). Configs are unchanged, so TIDE and Colab runs stay comparable.
+- Runs that cannot be babysat every 12 hours (full CUBIT pretraining, multi-seed sweeps) go to TIDE batch jobs (https://csu-tide.github.io/batch-jobs/): Kubernetes **Jobs** have no runtime limit and restart automatically after node failures, which suits the resumable training scripts. Pods are capped at 6 hours and Deployments at 2 weeks. Needs `kubectl`, batch access (separate Getting Access step), a container image with the pins, and storage the Job can mount for data and checkpoints.
 
 **What not to do on Colab**
 - Do not spend compute units on full CUBIT pretraining, large hyperparameter sweeps or the bigger models. Hold these for Stage B.
@@ -127,7 +133,7 @@ Rules that keep results honest, whatever happens with permissions:
 
 **Metrics** (crack / `linear_defect`): recall, precision, mask IoU, false positives per 100 images, and mask mAP50 for Track A.
 
-**Matching rule (fixed in advance):** a predicted instance matches a GT instance if mask IoU >= 0.3, or if the masks overlap after dilating both by 3 px. Also report strict IoU 0.5. Thin cracks score low on pixel IoU even when correct. For Track B, derive instances from 8-connected components of the thresholded probability map.
+**Matching rule (fixed in advance):** a predicted instance matches a GT instance if mask IoU >= 0.3, or if the masks overlap after dilating both by 3 px. Also report strict IoU 0.5. Thin cracks score low on pixel IoU even when correct. One connected prediction may cover several touching GT instances: it is credited with all of them when its IoU with their union reaches the same threshold (otherwise with the best single GT). Recall counts matched GTs, precision counts matched predictions. (Before 2026-10-14 matching was strictly one-to-one, which capped a perfect prediction at 0.72 recall on NCUGD.) For Track B, derive instances from 8-connected components of the thresholded probability map.
 
 **Minimum region size (fixed): 24 px², measured at model-input resolution (a 640 px image or tile).** Predicted regions smaller than this are discarded before matching, for both tracks. Measured on the 1,600 crack and scratch polygons in `glass_merged_seg`: median area 608 px² (median length 103 px, median width about 5 px), 1st percentile 26 px², and only 0.6% are below 25 px². So 24 px² removes specks and JPEG-noise blobs while giving up almost no real defects. In `predict.py` the filter is applied per tile at model-input scale, before stitching, so it means the same thing on a 640 px crop and a full-resolution drone frame. It is not re-tuned per experiment.
 

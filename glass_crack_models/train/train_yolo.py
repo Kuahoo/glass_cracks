@@ -59,7 +59,8 @@ def main(argv=None):
     ap.add_argument("--epochs", type=int, default=None, help="Override config (and the smoke default of 1)")
     ap.add_argument("--fresh", action="store_true", help="Ignore an existing last.pt")
     ap.add_argument("--no-eval", action="store_true")
-    ap.add_argument("--compute-units", default="", help="Colab compute units used (logged to results.csv)")
+    ap.add_argument("--workers", type=int, default=None, help="Override config dataloader workers")
+    ap.add_argument("--compute-units", default="", help="Compute used, e.g. Colab units or the cluster GPU (logged to results.csv)")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -78,6 +79,8 @@ def main(argv=None):
     train_kw.update(data=str(data_yaml(cfg)), project=str(project), name=name, exist_ok=True, seed=seed, deterministic=True)
     if args.device:
         train_kw["device"] = args.device
+    if args.workers is not None:
+        train_kw["workers"] = args.workers
     if args.smoke:
         train_kw.update(data=str(smoke_yaml(cfg, run_dir)), epochs=1, imgsz=320, batch=4, workers=0,
                         device=args.device or "cpu", plots=False, patience=0)
