@@ -36,6 +36,12 @@ if [ ! -f "$DATA_ROOT/processed/glass_merged_seg/manifest.csv" ]; then
         echo "ERROR: upload bundle_colab.zip to $ZIP first (JupyterLab upload button), then re-run." >&2
         exit 1
     fi
+    if ! "$PY" -c "import sys, zipfile; sys.exit(not zipfile.is_zipfile(sys.argv[1]))" "$ZIP"; then
+        echo "ERROR: $ZIP is not a valid zip ($(stat -c %s "$ZIP") bytes; expected about 193 MB)." >&2
+        head -c 200 "$ZIP" | grep -qi "<html\|<!doctype" && echo "  It is an HTML page: a Drive link saved the download page, not the file." >&2
+        echo "  Delete it and upload again (wait for the upload bar to finish), or fetch it with gdown." >&2
+        exit 1
+    fi
     echo "== unzipping $ZIP -> $DATA_ROOT"
     mkdir -p "$DATA_ROOT"
     "$PY" -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$ZIP" "$DATA_ROOT"
