@@ -1,11 +1,9 @@
-"""Experiment config loading (YAML with ${DATA_ROOT} / ${OUT_ROOT} expansion and an optional `base:`)."""
+"""Experiment config loading (YAML with an optional `base:`)."""
 from __future__ import annotations
 
 from pathlib import Path
 
 import yaml
-
-from glass_crack_models import paths
 
 CONFIG_DIR = Path(__file__).resolve().parent / "configs"
 
@@ -21,7 +19,3 @@ def load_config(path: str | Path) -> dict:
         cfg = base
     cfg["_config_path"] = str(p.resolve())
     return cfg
-
-
-def resolved(value):
-    return paths.resolve(value) if isinstance(value, str) and "${" in value else value

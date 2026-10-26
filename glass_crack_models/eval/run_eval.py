@@ -163,7 +163,7 @@ def agdd_summary(images, maps, thr, n_boot, with_ci=True):
         s = M.sum_records(recs)
         d = {"recall": M.recall(s), "precision": M.precision(s), "strict_recall": M.strict_recall(s),
              "fp100": M.fp_per_100(s), "confusions100": agdd_eval.confusions_per_100(s),
-             "crack_recall": agdd_eval.crack_recall(s), "images": s.get("images", 0), "gt": s.get("gt", 0)}
+             "crack_recall": M.crack_recall(s), "images": s.get("images", 0), "gt": s.get("gt", 0)}
         if with_ci and recs:
             _, lo, hi = cluster_bootstrap(recs, groups[:len(recs)], M.recall, n=n_boot)
             d["recall_ci"] = [lo, hi]
@@ -240,14 +240,6 @@ def plot_pr(curves: dict, path: Path):
     plt.close(fig)
 
 
-def file_sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def dataset_sha() -> str:
     h = hashlib.sha256()
     for f in (paths.merged_dir() / "manifest.csv", paths.data_root() / "processed" / "cleaning_report.json"):
@@ -277,7 +269,15 @@ def track_a_map50(checkpoint: Path, class_names: list[str], device: str) -> dict
     return out
 
 
+RESULT_KEY = ("exp_id", "seed", "checkpoint_sha256", "limit")
+
+
+def _result_key(row: dict) -> tuple[str, ...]:
+    return tuple(str(row.get(k, "")) for k in RESULT_KEY)
+
+
 def append_results(row: dict, csv_path: Path):
+    """Add one row; an earlier row for the same run and checkpoint (a re-evaluation) is replaced."""
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     rows, header = [], list(row)
     if csv_path.exists():
@@ -286,6 +286,8 @@ def append_results(row: dict, csv_path: Path):
             rows = list(rd)
             header = list(rd.fieldnames or []) + [k for k in row if k not in (rd.fieldnames or [])]
     rows.append(row)
+    latest = {_result_key(r): i for i, r in enumerate(rows)}
+    rows = [r for i, r in enumerate(rows) if latest[_result_key(r)] == i]
     with csv_path.open("w", newline="", encoding="utf-8") as f:
         wr = csv.DictWriter(f, fieldnames=header)
         wr.writeheader()
@@ -335,7 +337,7 @@ def run(args) -> dict:
     out = args.out or paths.out_root() / "evals" / f"{args.exp_id}_s{args.seed}"
     out.mkdir(parents=True, exist_ok=True)
     predictor = load_predictor(ck, args.device)
-    ck_sha = file_sha256(ck)
+    ck_sha = paths.file_sha256(ck)
     n_boot = args.bootstrap
     merged = paths.merged_dir()
     groups = manifest_groups(merged)

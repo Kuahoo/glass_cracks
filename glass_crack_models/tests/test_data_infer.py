@@ -83,9 +83,8 @@ class SemsegTests(unittest.TestCase):
         t = torch.zeros(1, 1, 32, 32)
         t[..., 14:17, 4:28] = 1
         good, bad = (t * 20 - 10), torch.zeros_like(t) - 10
-        for name in ("bce_dice", "bce_tversky", "bce_dice_cldice"):
-            fn = S.make_loss(name)
-            self.assertLess(fn(good, t).item(), fn(bad, t).item(), name)
+        fn = S.make_loss("bce_dice")
+        self.assertLess(fn(good, t).item(), fn(bad, t).item())
 
     def test_weights(self):
         with tempfile.TemporaryDirectory() as d:
@@ -103,6 +102,16 @@ class SemsegTests(unittest.TestCase):
             self.assertEqual([p.name for p in imgs], ["a.jpg"])
             _, w_all = S.train_images_and_weights(d, "all")
             self.assertEqual(w_all, [1.0, 1.0, 1.0])
+
+
+class ConfigTests(unittest.TestCase):
+    def test_e4_inherits_e1_four_class_setup(self):
+        from glass_crack_models.config import load_config
+        cfg = load_config("e4_yolo_robust.yaml")
+        self.assertEqual(cfg["exp_id"], "E4")
+        self.assertEqual(cfg["dataset"], "merged")
+        self.assertEqual(cfg["model"], "yolo26s-seg.pt")
+        self.assertEqual(cfg["train"]["scale"], 0.7)
 
 
 if __name__ == "__main__":

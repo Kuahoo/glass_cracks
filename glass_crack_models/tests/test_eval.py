@@ -194,6 +194,77 @@ class AgddTests(unittest.TestCase):
         rec, _ = A.eval_view([pred], img)
         self.assertEqual((rec["tp"], rec["fp"], rec["fn"], rec["confusions"], rec["gt"]), (0, 1, 1, 1, 1))
 
+    def test_in_box_scores_per_view(self):
+        from glass_crack_models.eval import agdd_box_scores as B
+        img = self._img([2, 1, 3], [[100, 100, 200, 110], [300, 300, 400, 310], [500, 500, 520, 520]],
+                        [[[100, 100], [200, 100], [200, 110], [100, 110]], [[300, 300], [400, 300], [400, 310], [300, 310]],
+                         [[500, 500], [520, 500], [520, 520], [500, 520]]])
+        a = np.zeros((640, 640), np.uint8)
+        a[105, 150], a[305, 350], a[600, 600] = 200, 100, 50
+        b = np.zeros((640, 640), np.uint8)
+        b[105, 150], b[510, 510] = 20, 255   # the spot box (class 3) is not GT and not "outside"
+        boxes, outside = B.box_rows("r", [img], {"images/t/x": a, "image/t/x": b})
+        got = {(x["view"], x["class"]): round(x["in_box_max"], 3) for x in boxes}
+        self.assertEqual(got, {("images", "crack"): 0.784, ("images", "scratches"): 0.392,
+                               ("image", "crack"): 0.078, ("image", "scratches"): 0.0})
+        self.assertEqual({o["view"]: round(o["outside_max"], 3) for o in outside}, {"images": 0.196, "image": 0.0})
+        rows = {(r["boxes"], r["view"]): r for r in B.summarize(boxes, outside, thr=0.3)}
+        self.assertEqual(rows[("crack", "images")]["n"], 1)
+        self.assertEqual(rows[("crack", "images")]["share_at_thr"], 1.0)
+        self.assertEqual(rows[("crack", "image")]["share_at_thr"], 0.0)
+        self.assertEqual(rows[("linear", "image")]["share_image_below_images"], 1.0)
+
+
+def sweep(points):
+    return [{"thr": t, "recall": r, "precision": p, "f1": 2 * r * p / (r + p) if r + p else 0.0, "fp100": fp}
+            for t, r, p, fp in points]
+
+
+class CompareRunsTests(unittest.TestCase):
+    def test_recall_at_precision_and_ap(self):
+        from glass_crack_models.eval import compare_runs as C
+        rows = sweep([(0.1, 0.9, 0.6, 80.0), (0.3, 0.8, 0.85, 30.0), (0.5, 0.6, 0.9, 20.0), (0.9, 0.0, float("nan"), 0.0)])
+        r = C.recall_at_precision(rows, 0.85)
+        self.assertEqual((r["recall"], r["thr"], r["fp100"]), (0.8, 0.3, 30.0))
+        self.assertEqual(C.recall_at_precision(rows, 0.95)["recall"], 0.0)
+        # step envelope: 0.6 * 0.9 + 0.2 * 0.85 + 0.1 * 0.6
+        self.assertAlmostEqual(C.pr_auc(rows), 0.54 + 0.17 + 0.06)
+
+    def test_ap_ignores_runs_with_no_predictions(self):
+        from glass_crack_models.eval import compare_runs as C
+        self.assertEqual(C.pr_auc(sweep([(0.5, 0.0, float("nan"), 0.0)])), 0.0)
+
+    def test_aggregate_mean_sd(self):
+        from glass_crack_models.eval import compare_runs as C
+        agg = C.aggregate([{"run": "E1_s0", "exp_id": "E1", "seed": 0, "x": 0.7},
+                           {"run": "E1_s1", "exp_id": "E1", "seed": 1, "x": 0.9},
+                           {"run": "E3_s0", "exp_id": "E3", "seed": 0, "x": 0.5}])
+        m, sd, n = agg["E1"]["x"]
+        self.assertAlmostEqual(m, 0.8)
+        self.assertAlmostEqual(sd, 0.1414, places=4)
+        self.assertEqual(n, 2)
+        self.assertEqual(agg["E3"]["x"][2], 1)
+
+
+class ResultsCsvTests(unittest.TestCase):
+    def test_reevaluation_replaces_row(self):
+        import csv
+        import tempfile
+        from pathlib import Path
+        from glass_crack_models.eval.run_eval import append_results
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "results.csv"
+            base = {"exp_id": "E1", "seed": 0, "checkpoint_sha256": "abc", "limit": "", "test_recall": 0.7}
+            append_results(base, p)
+            append_results({**base, "seed": 1, "checkpoint_sha256": "def"}, p)
+            append_results({**base, "test_recall": 0.8, "notes": "rescored"}, p)
+            append_results({**base, "checkpoint_sha256": "new"}, p)
+            with p.open() as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual([(r["seed"], r["checkpoint_sha256"], r["test_recall"]) for r in rows],
+                         [("1", "def", "0.7"), ("0", "abc", "0.8"), ("0", "new", "0.7")])
+        self.assertEqual(rows[1]["notes"], "rescored")
+
 
 if __name__ == "__main__":
     unittest.main()

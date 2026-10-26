@@ -2,6 +2,7 @@
 code runs on the laptop, Colab and the cluster with only environment variables changed."""
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -38,6 +39,14 @@ def cubit_dir() -> Path:
 
 def results_csv() -> Path:
     return out_root() / "results" / "results.csv"
+
+
+def file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def resolve(path: str | Path) -> Path:

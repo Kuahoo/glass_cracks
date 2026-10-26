@@ -40,24 +40,24 @@ def image_record(score_map: np.ndarray, gts: list[Region], thr: float, slice_tag
     return rec
 
 
-def _div(a, b):
+def div(a, b):
     return float(a) / float(b) if b else float("nan")
 
 
-def recall(s): return _div(s["tp"], s["tp"] + s["fn"])
+def recall(s): return div(s["tp"], s["tp"] + s["fn"])
 def precision(s):
     tp = s.get("tp_pred", s["tp"])
-    return _div(tp, tp + s["fp"])
+    return div(tp, tp + s["fp"])
 
 
-def strict_recall(s): return _div(s.get("tp_strict", 0), s.get("tp_strict", 0) + s.get("fn_strict", 0))
+def strict_recall(s): return div(s.get("tp_strict", 0), s.get("tp_strict", 0) + s.get("fn_strict", 0))
 
 
 def strict_precision(s):
     tp = s.get("tp_pred_strict", s.get("tp_strict", 0))
-    return _div(tp, tp + s.get("fp_strict", 0))
-def mask_iou(s): return _div(s["inter"], s["union"])
-def fp_per_100(s): return 100 * _div(s["fp"], s["images"])
+    return div(tp, tp + s.get("fp_strict", 0))
+def mask_iou(s): return div(s["inter"], s["union"])
+def fp_per_100(s): return 100 * div(s["fp"], s["images"])
 
 
 def f1(s):
@@ -67,16 +67,16 @@ def f1(s):
     return 0.0 if p + r == 0 else 2 * p * r / (p + r)
 
 
-def crack_recall(s): return _div(s.get("tp_crack", 0), s.get("gt_crack", 0))
+def crack_recall(s): return div(s.get("tp_crack", 0), s.get("gt_crack", 0))
 
 
 def fp_per_100_slice(tag):
-    return lambda s: 100 * _div(s.get(f"fp_{tag}", 0), s.get(f"images_{tag}", 0))
+    return lambda s: 100 * div(s.get(f"fp_{tag}", 0), s.get(f"images_{tag}", 0))
 
 
 def cldice(s):
-    tprec = _div(s.get("skel_p_in_g", 0), s.get("skel_p", 0))
-    tsens = _div(s.get("skel_g_in_p", 0), s.get("skel_g", 0))
+    tprec = div(s.get("skel_p_in_g", 0), s.get("skel_p", 0))
+    tsens = div(s.get("skel_g_in_p", 0), s.get("skel_g", 0))
     if np.isnan(tprec) or np.isnan(tsens) or tprec + tsens == 0:
         return float("nan")
     return 2 * tprec * tsens / (tprec + tsens)

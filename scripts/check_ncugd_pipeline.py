@@ -21,27 +21,20 @@ Three questions, answered separately so you know what to fix:
 Outputs (default ./ncugd_check/): report.md, results.json, instances.csv, gt_overlay/*.jpg,
 maps/<size>_<mode>/*.jpg (image | probability overlay, GT outline in green).
 
-Backends (model is only needed for B and C; A runs with --backend none):
-  ultralytics  --weights best.pt [--model-classes 1 3]       YOLO-seg; prob = max(conf * instance mask)
-  smp          --weights unet.pth --encoder resnet34         segmentation_models_pytorch; sigmoid output
-  custom       --module my_infer.py                          def predict(image_bgr, size, mode) -> HxW float [0,1]
-                                                             (any subset of the arguments works)
-  pred-dir     --pred-dir DIR                                precomputed <stem>.npy (float) or <stem>.png (8/16-bit)
-  none                                                       GT / alignment check only
+Backends (a model is only needed for B and C; A runs with --backend none):
+  model     --weights best.pt or best.pth    the project predictor (YOLO-seg or U-Net)
+  pred-dir  --pred-dir DIR                    precomputed <stem>.npy (float) or <stem>.png (8/16-bit)
+  none                                        GT / alignment check only
 
 Examples
-  python check_ncugd_pipeline.py --data glass_crack_dataset_bundle/processed/ncugd_external_test --backend none
-  python check_ncugd_pipeline.py --data .../ncugd_external_test --backend ultralytics \\
-         --weights runs/segment/e1/weights/best.pt --sizes 640 1024 1280 --op-threshold 0.25
-  python check_ncugd_pipeline.py --data .../ncugd_external_test --backend smp --weights unet_best.pth \\
-         --encoder resnet34 --op-threshold 0.95
+  python scripts/check_ncugd_pipeline.py --data .../ncugd_external_test --backend none
+  python scripts/check_ncugd_pipeline.py --data .../ncugd_external_test --backend model \\
+         --weights runs/E1_s0/weights/best.pt --sizes 640 1024 1280 --op-threshold 0.30
 """
 from __future__ import annotations
 
 import argparse
 import csv
-import importlib.util
-import inspect
 import json
 import sys
 from pathlib import Path
@@ -228,105 +221,25 @@ def make_backend(args):
             raise FileNotFoundError(f"no prediction for '{stem}' in {d}")
         predict.configs = [("external", "as-is")]
         return predict
-    if b == "custom":
-        spec = importlib.util.spec_from_file_location("user_infer", args.module)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        fn = mod.predict
-        params = set(inspect.signature(fn).parameters)
-
-        def predict(img, size, mode, stem):
-            kw = {k: v for k, v in (("size", size), ("mode", mode), ("stem", stem)) if k in params}
-            return np.asarray(fn(img, **kw), dtype=np.float32)
-        return predict
-    if b == "ultralytics":
-        try:
-            from ultralytics import YOLO
-        except ImportError:
-            sys.exit("ultralytics is not installed: pip install ultralytics")
-        model = YOLO(args.weights)
-        keep = set(args.model_classes) if args.model_classes else None
+    if b == "model":
+        from glass_crack_models.infer.predictors import load_predictor
+        predictor = load_predictor(args.weights, args.device)
+        if predictor.track == "A":
+            predictor.conf = 0.001  # the cached eval maps hide scores under the training conf floor
 
         def predict(img, size, mode, stem):
             H, W = img.shape[:2]
-            inp = cv2.resize(img, (size, size), interpolation=cv2.INTER_LINEAR) if mode == "stretch" else img
-            res = model.predict(inp, imgsz=size, conf=0.001, iou=0.7, max_det=300,
-                                device=args.device, verbose=False)[0]
-            ph, pw = inp.shape[:2]
-            prob = np.zeros((ph, pw), np.float32)
-            if res.masks is not None and res.boxes is not None:
-                confs = res.boxes.conf.cpu().numpy()
-                clss = res.boxes.cls.cpu().numpy().astype(int)
-                for xy, c, k in zip(res.masks.xy, confs, clss):
-                    if keep is not None and int(k) not in keep:
-                        continue
-                    if len(xy) < 3:
-                        continue
-                    tmp = np.zeros((ph, pw), np.uint8)
-                    cv2.fillPoly(tmp, [np.round(xy).astype(np.int32)], 1)
-                    prob = np.maximum(prob, tmp.astype(np.float32) * float(c))
+            rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             if mode == "stretch":
-                prob = cv2.resize(prob, (W, H), interpolation=cv2.INTER_LINEAR)
-            return prob
-        return predict
-    if b == "smp":
-        try:
-            import torch
-            import segmentation_models_pytorch as smp
-        except ImportError:
-            sys.exit("torch / segmentation-models-pytorch not installed: pip install torch segmentation-models-pytorch")
-        dev = torch.device(args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu"))
-        try:
-            ckpt = torch.load(args.weights, map_location=dev, weights_only=True)
-        except Exception:
-            print("  note: weights_only load failed, retrying with full unpickling (only do this for your own files)")
-            ckpt = torch.load(args.weights, map_location=dev, weights_only=False)
-        if isinstance(ckpt, torch.nn.Module):
-            net = ckpt
-        else:
-            state = ckpt
-            for k in ("model_state_dict", "state_dict", "model"):
-                if isinstance(state, dict) and k in state and isinstance(state[k], dict):
-                    state = state[k]
-                    break
-            net = smp.create_model(args.arch, encoder_name=args.encoder, encoder_weights=None,
-                                   in_channels=3, classes=args.smp_classes)
-            try:
-                net.load_state_dict(state, strict=True)
-            except RuntimeError:
-                stripped = {k.split("module.", 1)[-1].split("model.", 1)[-1] if k.startswith(("module.", "model.")) else k: v
-                            for k, v in state.items()}
-                missing = net.load_state_dict(stripped, strict=False)
-                n_total = len(net.state_dict())
-                if len(missing.missing_keys) > 0.05 * n_total:
-                    sys.exit(f"checkpoint does not match --arch {args.arch} / --encoder {args.encoder}: "
-                             f"{len(missing.missing_keys)}/{n_total} keys missing")
-                print(f"  note: loaded with {len(missing.missing_keys)} missing / {len(missing.unexpected_keys)} unexpected keys")
-        net.to(dev).eval()
-        mean = np.array([0.485, 0.456, 0.406], np.float32)
-        std = np.array([0.229, 0.224, 0.225], np.float32)
-
-        def predict(img, size, mode, stem):
-            H, W = img.shape[:2]
-            if mode == "stretch":
-                S = int(np.ceil(size / 32) * 32)
-                inp, meta = cv2.resize(img, (S, S), interpolation=cv2.INTER_LINEAR), None
-            else:
-                inp, meta = _letterbox(img, size)
-            x = cv2.cvtColor(inp, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-            if args.normalize == "imagenet":
-                x = (x - mean) / std
-            t = torch.from_numpy(x.transpose(2, 0, 1)).unsqueeze(0).to(dev)
-            with torch.no_grad():
-                out = net(t)
-                if args.smp_classes == 1:
-                    p = torch.sigmoid(out)[0, 0]
-                else:
-                    p = torch.softmax(out, 1)[0, args.smp_channel]
-            p = p.cpu().numpy().astype(np.float32)
-            if meta is None:
-                return cv2.resize(p, (W, H), interpolation=cv2.INTER_LINEAR)
-            return _unletterbox(p, meta, H, W)
+                side = int(np.ceil(size / 32) * 32)
+                inp = cv2.resize(rgb, (side, side), interpolation=cv2.INTER_LINEAR)
+                prob = predictor.predict_batch([inp])[0]["linear_defect"]
+                return cv2.resize(prob, (W, H), interpolation=cv2.INTER_LINEAR)
+            if predictor.track == "A":
+                return predictor.predict_batch([rgb], imgsz=size)[0]["linear_defect"]
+            inp, meta = _letterbox(rgb, size)
+            prob = predictor.predict_batch([inp])[0]["linear_defect"]
+            return _unletterbox(prob, meta, H, W)
         return predict
     raise SystemExit(f"unknown backend {b}")
 
@@ -385,16 +298,9 @@ def main(argv=None):
     ap.add_argument("--data", type=Path, required=True, help="folder containing NCUGD images + YOLO-seg label txt files")
     ap.add_argument("--images-dir", type=Path, help="only use images from this folder (relative to --data or absolute)")
     ap.add_argument("--labels-dir", type=Path, help="only use label txt files from this folder (relative to --data or absolute)")
-    ap.add_argument("--backend", choices=["none", "ultralytics", "smp", "custom", "pred-dir"], default="none")
-    ap.add_argument("--weights", type=str, help="model weights (ultralytics / smp)")
-    ap.add_argument("--module", type=str, help="python file defining predict(image_bgr, [size], [mode], [stem])")
+    ap.add_argument("--backend", choices=["none", "model", "pred-dir"], default="none")
+    ap.add_argument("--weights", type=str, help="checkpoint (.pt YOLO-seg or .pth U-Net)")
     ap.add_argument("--pred-dir", type=str, help="folder of precomputed probability maps")
-    ap.add_argument("--arch", default="unet", help="smp architecture (default unet)")
-    ap.add_argument("--encoder", default="resnet34", help="smp encoder (default resnet34)")
-    ap.add_argument("--smp-classes", type=int, default=1)
-    ap.add_argument("--smp-channel", type=int, default=0, help="channel used when --smp-classes > 1")
-    ap.add_argument("--normalize", choices=["imagenet", "none"], default="imagenet", help="smp input normalization")
-    ap.add_argument("--model-classes", type=int, nargs="*", help="ultralytics: only use these predicted class ids")
     ap.add_argument("--gt-classes", type=int, nargs="*", help="only score GT lines with these class ids (default all)")
     ap.add_argument("--sizes", type=int, nargs="+", default=[640, 1024, 1280])
     ap.add_argument("--modes", nargs="+", choices=["letterbox", "stretch"], default=["letterbox", "stretch"])
@@ -406,10 +312,8 @@ def main(argv=None):
     ap.add_argument("--out", type=Path, default=Path("ncugd_check"))
     args = ap.parse_args(argv)
 
-    if args.backend in ("ultralytics", "smp") and not args.weights:
-        ap.error("--weights is required for this backend")
-    if args.backend == "custom" and not args.module:
-        ap.error("--module is required for --backend custom")
+    if args.backend == "model" and not args.weights:
+        ap.error("--weights is required for --backend model")
     if args.backend == "pred-dir" and not args.pred_dir:
         ap.error("--pred-dir is required for --backend pred-dir")
     if not args.data.is_dir():

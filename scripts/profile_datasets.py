@@ -31,6 +31,7 @@ import random
 import re
 import sys
 import time
+import traceback
 from pathlib import Path
 
 import numpy as np
@@ -108,7 +109,7 @@ def poly_area(xy: np.ndarray) -> float:
 
 # ----------------------------------------------------------------------------- scanning
 def scan_dataset(root: Path):
-    files = {"img": [], "txt": [], "json": [], "yaml": [], "zip": [], "other": 0}
+    files = {"img": [], "txt": [], "json": [], "yaml": [], "zip": [], "parquet": [], "other": 0}
     total_bytes = 0
     for dp, dns, fns in os.walk(root):
         dns[:] = [d for d in dns if d not in SKIP_DIRS and not d.startswith(".")]
@@ -127,6 +128,8 @@ def scan_dataset(root: Path):
                 files["json"].append(p)
             elif ext in (".yaml", ".yml"):
                 files["yaml"].append(p)
+            elif ext == ".parquet":
+                files["parquet"].append(p)
             elif ext in (".zip", ".tar", ".gz", ".7z", ".rar", ".tgz"):
                 files["zip"].append(p)
             else:
@@ -365,8 +368,8 @@ def profile_coco(jpaths, root, size_cap_mb=400):
             continue
         cats = {c.get("id"): c.get("name") for c in d.get("categories", [])}
         imgs = {im["id"]: im for im in d["images"]}
-        per_cat = collections.defaultdict(lambda: {"instances": 0, "polygons": 0, "rle": 0, "bbox_only": 0,
-                                                   "width_ref": [], "area_rel": []})
+        per_cat = collections.defaultdict(lambda: {"instances": 0, "polygons": 0, "flat_polygons": 0, "rle": 0,
+                                                   "bbox_only": 0, "bad_polygons": 0, "width_ref": [], "area_rel": []})
         for a in d["annotations"]:
             pc = per_cat[a.get("category_id")]
             pc["instances"] += 1
@@ -374,9 +377,15 @@ def profile_coco(jpaths, root, size_cap_mb=400):
             im = imgs.get(a.get("image_id"))
             if isinstance(seg, list) and seg:
                 pc["polygons"] += 1
+                if all(isinstance(v, (int, float)) for v in seg):  # one flat [x1, y1, x2, ...] list (SSGD)
+                    pc["flat_polygons"] += 1
+                    seg = [seg]
                 if im:
                     W, H = im.get("width"), im.get("height")
                     for poly in seg:
+                        if not isinstance(poly, list) or len(poly) < 6 or len(poly) % 2:
+                            pc["bad_polygons"] += 1
+                            continue
                         arr = np.asarray(poly, dtype=float).reshape(-1, 2)
                         wd = poly_width(arr)
                         if wd is not None and W and H:
@@ -394,8 +403,8 @@ def profile_coco(jpaths, root, size_cap_mb=400):
             "images_without_annotations": len([i for i in imgs if i not in covered]),
             "categories": {str(k): v for k, v in cats.items()},
             "per_category": {str(cats.get(k, k)): {
-                "instances": v["instances"], "polygons": v["polygons"], "rle": v["rle"],
-                "bbox_only": v["bbox_only"],
+                "instances": v["instances"], "polygons": v["polygons"], "flat_polygons": v["flat_polygons"],
+                "bad_polygons": v["bad_polygons"], "rle": v["rle"], "bbox_only": v["bbox_only"],
                 "stroke_width_at_640_px": summarize(v["width_ref"], 2),
                 "rel_area": summarize(v["area_rel"], 5)} for k, v in per_cat.items()},
         })
@@ -463,8 +472,13 @@ def profile_dataset(root: Path, args) -> dict:
     rep: dict = {"dataset": root.name, "path": str(root), "script_version": SCRIPT_VERSION,
                  "size_on_disk": human(files["bytes"]), "bytes": files["bytes"],
                  "archives_found": [str(p.relative_to(root)) for p in files["zip"][:10]],
-                 "n_archives": len(files["zip"])}
+                 "n_archives": len(files["zip"]),
+                 "parquet_files": [str(p.relative_to(root)) for p in files["parquet"][:20]]}
     warnings = []
+    if files["parquet"]:
+        warnings.append(f"{len(files['parquet'])} parquet file(s) (e.g. CrackSeg9k): images/masks are embedded "
+                        "as columns, not as files on disk. Use phase_0/prepare_dataset_bundle.py to materialize them; "
+                        "this profiler only counts standalone image/label files.")
 
     img_info, size_lookup = profile_images(image_files, root, args.max_image_read)
     rep["images"] = img_info
@@ -745,10 +759,15 @@ def main(argv=None):
     if missing:
         ap.error(f"not a directory: {missing[0]}")
 
-    reps = []
+    reps, failed = [], []
     for t in targets:
         print(f"profiling {t} ...", flush=True)
-        rep = profile_dataset(t, args)
+        try:
+            rep = profile_dataset(t, args)
+        except Exception:
+            traceback.print_exc()
+            failed.append(t.name)
+            continue
         reps.append(rep)
         if not args.quiet:
             print_report(rep)
@@ -758,7 +777,9 @@ def main(argv=None):
     for r in reps:
         row = one_line(r)
         print(f"  {row['dataset']:<28} {row['images']:>6} imgs  {row['label_types']:<28} warnings: {row['n_warnings']}")
-    return 0
+    if failed:
+        print(f"FAILED (see tracebacks above): {', '.join(failed)}")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

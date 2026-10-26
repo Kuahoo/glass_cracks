@@ -111,7 +111,7 @@ The target deployment is drone images of facades, where a crack is a few pixels 
 
 ## 7. Hard negatives
 
-False positives (FP/100 = 112.8 for the U-Net) are the second biggest accuracy problem.
+False positives (FP/100 = 74.3 for the U-Net on TIDE) are the second biggest accuracy problem.
 
 1. **Crack-free glass:** every glass-core image with no `linear_defect` is retained as a negative (check how many exist; do not filter them out).
 2. **Facade negatives from CUBIT:** crack-free tiles, plus spalling-only tiles (spalling is not a crack and is a natural confuser).

@@ -10,7 +10,6 @@ The threshold defaults to the one frozen on merged valid (`operating_point.json`
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import time
 from pathlib import Path
@@ -19,6 +18,7 @@ import cv2
 import numpy as np
 from skimage.morphology import skeletonize
 
+from glass_crack_models import paths
 from glass_crack_models.data.rasterize import IMAGE_EXTS, mask_to_polygons
 from glass_crack_models.eval.regions import extract_regions, union_mask
 from glass_crack_models.infer.predictors import load_predictor
@@ -30,14 +30,6 @@ from glass_crack_models.viz.overlay import pred_overlay, read_rgb, save_rgb
 def operating_point_for(checkpoint: Path) -> dict | None:
     f = checkpoint.parent / "operating_point.json"
     return json.loads(f.read_text()) if f.exists() else None
-
-
-def file_sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def instances_json(score_map: np.ndarray, thr: float) -> list[dict]:
@@ -73,24 +65,6 @@ def predict_one(predictor, img_path: Path, out_dir: Path, thr: float, scales, cl
     return len(inst), time.time() - t0
 
 
-def export(predictor, fmt: str, out_dir: Path):
-    out_dir.mkdir(parents=True, exist_ok=True)
-    if predictor.track == "A":
-        print("exported", predictor.model.export(format=fmt, imgsz=TILE))
-        return
-    import torch
-    x = torch.zeros(1, 3, TILE, TILE, device=predictor.device)
-    model = predictor.model.eval()
-    if fmt == "torchscript":
-        path = out_dir / (Path(predictor.checkpoint).stem + ".torchscript")
-        torch.jit.trace(model, x).save(str(path))
-    else:
-        path = out_dir / (Path(predictor.checkpoint).stem + ".onnx")
-        torch.onnx.export(model, x, str(path), input_names=["image"], output_names=["logits"],
-                          dynamic_axes={"image": {0: "b", 2: "h", 3: "w"}, "logits": {0: "b", 2: "h", 3: "w"}})
-    print("exported", path)
-
-
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--checkpoint", required=True, type=Path)
@@ -102,15 +76,11 @@ def main(argv=None):
     ap.add_argument("--tile", type=int, default=TILE)
     ap.add_argument("--overlap", type=float, default=TILE_OVERLAP)
     ap.add_argument("--device", default=None)
-    ap.add_argument("--export", choices=["torchscript", "onnx"], default=None, help="Export the model and exit")
     args = ap.parse_args(argv)
 
-    predictor = load_predictor(args.checkpoint, args.device)
-    if args.export:
-        export(predictor, args.export, args.out)
-        return
     if args.input is None:
-        ap.error("--input is required unless --export is given")
+        ap.error("--input is required")
+    predictor = load_predictor(args.checkpoint, args.device)
     op = operating_point_for(args.checkpoint)
     if args.threshold is not None:
         thr, thr_src = args.threshold, "cli"
@@ -123,7 +93,7 @@ def main(argv=None):
         p for p in args.input.rglob("*") if p.suffix.lower() in IMAGE_EXTS)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "run.json").write_text(json.dumps({
-        "checkpoint": str(args.checkpoint.resolve()), "checkpoint_sha256": file_sha256(args.checkpoint),
+        "checkpoint": str(args.checkpoint.resolve()), "checkpoint_sha256": paths.file_sha256(args.checkpoint),
         "track": predictor.track, "model_classes": predictor.class_names, "class": args.cls,
         "threshold": thr, "threshold_source": thr_src, "scales": args.scales, "tile": args.tile,
         "overlap": args.overlap, "min_region_px": MIN_REGION_PX, "device": predictor.device,

@@ -1,7 +1,8 @@
-# E4 starting point (Phase 4, step 1) if Track A wins: scale and appearance augmentation Roboflow did not apply.
+# E4 starting point (Phase 4, step 1): scale and appearance augmentation Roboflow did not apply.
+# Built on E1 (4 classes), the Track A winner on TIDE (fewer false positives, same recall as E2).
 # Downscale-heavy scale jitter pushes cracks toward drone-distance pixel sizes; colour shifts beyond +-15%.
 # No extra blur/noise (already on the Roboflow pair copies).
-base: e2_yolo_linear.yaml
+base: e1_yolo_4class.yaml
 exp_id: E4
 notes: "scale/appearance aug"
 train:

@@ -12,20 +12,26 @@ python -m glass_crack_models.viz.overlay gt --dataset linear --n 20
 python -m glass_crack_models.train.train_yolo   --config e2_yolo_linear.yaml --smoke
 python -m glass_crack_models.train.train_semseg --config e3_unet_r34.yaml   --smoke
 
-# training (resumes automatically; evaluates best checkpoint and appends to OUT_ROOT/results/results.csv)
+# training (resumes automatically; evaluates best and upserts a row in OUT_ROOT/results/results.csv
+# keyed by exp_id + seed + checkpoint_sha256, so a re-eval replaces the previous row)
 python -m glass_crack_models.train.train_yolo   --config e2_yolo_linear.yaml --seed 0
 python -m glass_crack_models.train.train_yolo   --config e1_yolo_4class.yaml --seed 0
+python -m glass_crack_models.train.train_yolo   --config e4_yolo_robust.yaml --seed 0   # E1 base + scale/appearance aug
 python -m glass_crack_models.train.train_semseg --config e3_unet_r34.yaml   --seed 0
 
 # re-evaluate a checkpoint (add --reuse-cache to re-score saved predictions without a GPU)
 python -m glass_crack_models.eval.run_eval --checkpoint OUT_ROOT/runs/E2_s0/weights/best.pt --exp-id E2 --seed 0
 
+# Phase 1: threshold-free comparison and AGDD per-view in-box scores (CPU; needs existing evals/)
+python -m glass_crack_models.eval.compare_runs --runs E1_s0 E1_s1 E1_s2 E2_s0 E2_s1 E2_s2 E3_s0
+python -m glass_crack_models.eval.agdd_box_scores --runs E1_s0 E2_s0 E3_s0 --montage E1_s0 E2_s0 E3_s0
+
 # predict on photos (threshold from operating_point.json next to the checkpoint)
 python -m glass_crack_models.infer.predict --checkpoint .../best.pt --input photos/ --out preds/
 
-# CUBIT tiles for pretraining (Phase 4)
+# CUBIT tiles for pretraining (Phase 3+)
 python -m glass_crack_models.data.tile_cubit --pilot 500 --out outputs/cubit_pilot
 python -m glass_crack_models.data.tile_cubit --windows 1024 --out outputs/cubit_tiles_1024
 ```
 
-Per evaluation, `OUT_ROOT/evals/<exp>_s<seed>/` holds `summary.json` (all metrics with 95% cluster-bootstrap CIs), `operating_point.json`, `pr_curves.png`, `galleries/valid_false_{negatives,positives}.jpg`, and `cache/` (uint8 score maps).
+Per evaluation, `OUT_ROOT/evals/<exp>_s<seed>/` holds `summary.json` (all metrics with 95% cluster-bootstrap CIs), `operating_point.json`, `pr_curves.png`, `galleries/valid_false_{negatives,positives}.jpg`, and `cache/` (uint8 score maps). On TIDE, run Phase 1 from `notebooks/tide_phase1.ipynb`.

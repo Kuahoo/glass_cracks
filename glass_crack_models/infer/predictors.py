@@ -49,9 +49,10 @@ class YoloPredictor:
         self.device = device or default_device()
         self.conf, self.max_det = conf, max_det
 
-    def predict_batch(self, tiles: list[np.ndarray]) -> list[dict[str, np.ndarray]]:
+    def predict_batch(self, tiles: list[np.ndarray], imgsz: int | None = None) -> list[dict[str, np.ndarray]]:
         bgr = [cv2.cvtColor(t, cv2.COLOR_RGB2BGR) for t in tiles]
-        imgsz = max(max(t.shape[:2]) for t in tiles)
+        if imgsz is None:
+            imgsz = max(max(t.shape[:2]) for t in tiles)
         imgsz = int(np.ceil(imgsz / 32) * 32)
         results = self.model.predict(bgr, imgsz=imgsz, conf=self.conf, max_det=self.max_det, retina_masks=True,
                                      device=self.device, verbose=False)

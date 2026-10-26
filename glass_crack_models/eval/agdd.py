@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from glass_crack_models import paths
+from glass_crack_models.eval.metrics import div
 from glass_crack_models.eval.regions import Region
 from glass_crack_models.protocol import (AGDD_BOX_IOU, AGDD_HIT_FRACTION, AGDD_NONLINEAR_IDS, AGDD_STRICT_BOX_IOU,
                                          AGDD_TO_EVAL, AGDD_VIEWS)
@@ -122,10 +123,5 @@ def eval_view(preds: list[Region], img: AgddImage) -> tuple[dict, set[int]]:
     return rec, matched
 
 
-def _div(a, b):
-    return float(a) / float(b) if b else float("nan")
-
-
-def pair_recall(s): return _div(s["pair_tp"], s["pair_gt"])
-def crack_recall(s): return _div(s["tp_crack"], s["gt_crack"])
-def confusions_per_100(s): return 100 * _div(s["confusions"], s["images"])
+def pair_recall(s): return div(s["pair_tp"], s["pair_gt"])
+def confusions_per_100(s): return 100 * div(s["confusions"], s["images"])
