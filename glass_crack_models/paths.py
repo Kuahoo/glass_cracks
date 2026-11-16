@@ -25,10 +25,6 @@ def linear_dir() -> Path:
     return data_root() / "processed" / "glass_merged_linear"
 
 
-def ncugd_dir() -> Path:
-    return data_root() / "processed" / "ncugd_external_test"
-
-
 def agdd_dir() -> Path:
     return data_root() / "datasets" / "agdd_aircraft_glass" / "data"
 

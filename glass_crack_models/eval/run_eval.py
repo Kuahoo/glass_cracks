@@ -2,14 +2,21 @@
 
     python -m glass_crack_models.eval.run_eval --checkpoint runs/E2_s0/weights/best.pt --exp-id E2 --seed 0
 
-1. Predict `linear_defect` score maps on merged valid/test, NCUGD and both AGDD views (cached as uint8
+1. Predict `linear_defect` score maps on merged valid/test and both AGDD views (cached as uint8
    in <out>/cache/, so re-scoring never needs the GPU again: pass --reuse-cache).
 2. Sweep thresholds on merged valid, pick max F1 (lenient matching), write operating_point.json next to
    the checkpoint. This threshold is then frozen for test and the external sets.
 3. Valid and test at the frozen threshold with cluster-bootstrap CIs over near-duplicate groups;
-   NCUGD; AGDD per view + pair recall; PR curves for every set; Track A mask mAP50.
+   AGDD per view + pair recall; PR curves for every set; Track A mask mAP50.
 4. Failure galleries on valid (top 20 false negatives / positives).
 5. summary.json in <out>, one row appended to results.csv.
+
+Resolution ablation (plan v4, M1) on a frozen checkpoint, no retraining:
+    R0       --imgsz 640  --whole     whole image, long side 640
+    R1       --imgsz 1280             overlapping 640 px tiles (25%) over the image at long side 1280
+    R2_1024  --imgsz 1024 --whole     whole image, long side 1024 (letterboxed); likewise R2_1280
+Scores are resized back to native size before matching. Use a distinct --exp-id per variant
+(e.g. --exp-id R1), so evals/<exp_id>_s<seed>/ and the results.csv row stay separate.
 """
 from __future__ import annotations
 
@@ -38,7 +45,7 @@ from glass_crack_models.protocol import (BOOTSTRAP_RESAMPLES, LINEAR_SOURCE_IDS,
 from glass_crack_models.viz.overlay import caption, grid, pred_overlay, read_rgb, save_rgb
 
 CLS = "linear_defect"
-CRACK_ID = 1  # in glass_merged_seg / ncugd class space
+CRACK_ID = 1  # in glass_merged_seg class space
 
 
 # ---- data ---------------------------------------------------------------------------------------
@@ -75,7 +82,19 @@ def manifest_groups(ds: Path) -> dict[str, str]:
 
 # ---- prediction cache -----------------------------------------------------------------------------
 
-def predict_maps(predictor, image_list: list[tuple[str, Path]], cache: Path, ck_sha: str, reuse: bool) -> dict[str, np.ndarray]:
+def make_infer(predictor, imgsz: int | None = None, whole: bool = False):
+    """RGB image -> linear_defect score map at native size. Default: native resolution, 640 px tiles."""
+    def infer(img: np.ndarray) -> np.ndarray:
+        h, w = img.shape[:2]
+        if imgsz:
+            s = imgsz / max(h, w)
+            img = cv2.resize(img, (round(w * s), round(h * s)), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR)
+        m = predictor.predict_batch([img])[0][CLS] if whole else predict_tiled(predictor, img)[CLS]
+        return m if m.shape == (h, w) else cv2.resize(m, (w, h), interpolation=cv2.INTER_LINEAR)
+    return infer
+
+
+def predict_maps(infer, image_list: list[tuple[str, Path]], cache: Path, ck_sha: str, reuse: bool) -> dict[str, np.ndarray]:
     meta = cache.with_suffix(".json")
     if reuse and cache.exists() and meta.exists() and json.loads(meta.read_text()).get("checkpoint_sha256") == ck_sha:
         with np.load(cache) as z:
@@ -83,7 +102,7 @@ def predict_maps(predictor, image_list: list[tuple[str, Path]], cache: Path, ck_
                 return {k: z[k] for k, _ in image_list}
     maps = {}
     for i, (key, path) in enumerate(image_list):
-        m = predict_tiled(predictor, read_rgb(path))[CLS]
+        m = infer(read_rgb(path))
         maps[key] = np.clip(np.round(m * 255), 0, 255).astype(np.uint8)
         if (i + 1) % 50 == 0:
             print(f"  predicted {i + 1}/{len(image_list)} ({cache.stem})", flush=True)
@@ -312,12 +331,6 @@ def results_row(meta: dict, res: dict) -> dict:
                 row[f"{split}_{k}_lo"], row[f"{split}_{k}_hi"] = (_fmt(v) for v in s[f"{k}_ci"])
     if res.get("map50"):
         row["valid_mask_map50"], row["test_mask_map50"] = _fmt(res["map50"]["val"]), _fmt(res["map50"]["test"])
-    if res.get("ncugd"):
-        s = res["ncugd"]
-        for k in ("recall", "precision", "fp100", "strict_recall"):
-            row[f"ncugd_{k}"] = _fmt(s.get(k))
-        if "recall_ci" in s:
-            row["ncugd_recall_lo"], row["ncugd_recall_hi"] = (_fmt(v) for v in s["recall_ci"])
     if res.get("agdd"):
         for v in agdd_eval.AGDD_VIEWS + ["pair"]:
             s = res["agdd"].get(v, {})
@@ -338,6 +351,8 @@ def run(args) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     predictor = load_predictor(ck, args.device)
     ck_sha = paths.file_sha256(ck)
+    infer = make_infer(predictor, args.imgsz, args.whole)
+    cache_key = ck_sha + (f":{args.imgsz}:{'whole' if args.whole else 'tiles'}" if args.imgsz or args.whole else "")
     n_boot = args.bootstrap
     merged = paths.merged_dir()
     groups = manifest_groups(merged)
@@ -345,7 +360,7 @@ def run(args) -> dict:
 
     print("[valid] predicting", flush=True)
     valid = load_seg_split(merged / "valid", groups, args.limit)
-    vmaps = predict_maps(predictor, [(it["name"], it["path"]) for it in valid], out / "cache" / "valid.npz", ck_sha, args.reuse_cache)
+    vmaps = predict_maps(infer, [(it["name"], it["path"]) for it in valid], out / "cache" / "valid.npz", cache_key, args.reuse_cache)
     sweep = seg_sweep(valid, vmaps)
     op = pick_threshold(sweep)
     thr = float(op["thr"])
@@ -354,7 +369,7 @@ def run(args) -> dict:
               "valid_precision": op["precision"], "exp_id": args.exp_id, "seed": args.seed, "checkpoint": str(ck),
               "checkpoint_sha256": ck_sha, "note": op.get("note", ""), "time": time.strftime("%Y-%m-%d %H:%M:%S")}
     (out / "operating_point.json").write_text(json.dumps(op_doc, indent=1))
-    if not args.limit:
+    if not args.limit and not (args.imgsz or args.whole):  # ablation variants never overwrite the run's threshold
         (ck.parent / "operating_point.json").write_text(json.dumps(op_doc, indent=1))
     print(f"[valid] frozen threshold {thr:.2f} (F1 {op['f1']:.3f})", flush=True)
     res["valid"] = seg_summary(valid, vmaps, thr, n_boot)
@@ -363,26 +378,15 @@ def run(args) -> dict:
     if not args.no_test:
         print("[test] predicting", flush=True)
         test = load_seg_split(merged / "test", groups, args.limit)
-        tmaps = predict_maps(predictor, [(it["name"], it["path"]) for it in test], out / "cache" / "test.npz", ck_sha, args.reuse_cache)
+        tmaps = predict_maps(infer, [(it["name"], it["path"]) for it in test], out / "cache" / "test.npz", cache_key, args.reuse_cache)
         res["test"] = seg_summary(test, tmaps, thr, n_boot)
         curves["merged test"] = (seg_sweep(test, tmaps), "recall", "precision")
-
-    if not args.skip_ncugd:
-        print("[ncugd] predicting", flush=True)
-        nc = load_seg_split(paths.ncugd_dir() / "test", None, args.limit)
-        nmaps = predict_maps(predictor, [(it["name"], it["path"]) for it in nc], out / "cache" / "ncugd.npz", ck_sha, args.reuse_cache)
-        s = seg_summary(nc, nmaps, thr, n_boot, with_ci=False)
-        recs = seg_records(nc, nmaps, thr, cldice=False)
-        _, lo, hi = cluster_bootstrap(recs, [it["name"] for it in nc], M.recall, n=n_boot)
-        s["recall_ci"] = [lo, hi]
-        res["ncugd"] = s
-        curves["NCUGD"] = (seg_sweep(nc, nmaps), "recall", "precision")
 
     if not args.skip_agdd:
         print("[agdd] predicting", flush=True)
         images = spread(agdd_eval.load_agdd(), args.limit)
         lst = [(f"{v}/{img.key}", p) for img in images for v, p in img.views.items()]
-        amaps = predict_maps(predictor, lst, out / "cache" / "agdd.npz", ck_sha, args.reuse_cache)
+        amaps = predict_maps(infer, lst, out / "cache" / "agdd.npz", cache_key, args.reuse_cache)
         res["agdd"] = agdd_summary(images, amaps, thr, n_boot)
         asw = agdd_sweep(images, amaps)
         for v in agdd_eval.AGDD_VIEWS:
@@ -422,8 +426,6 @@ def print_report(s: dict):
             d = s[split]
             print(f"{split:6s} recall {ci(d, 'recall')}  precision {ci(d, 'precision')}  maskIoU {ci(d, 'mask_iou')}  "
                   f"FP/100 {ci(d, 'fp100')}  (unannotated {d['fp100_unannotated']:.1f}, bubble/incl {d['fp100_negdefect']:.1f})")
-    if "ncugd" in s:
-        print(f"NCUGD  recall {ci(s['ncugd'], 'recall')}  precision {s['ncugd']['precision']:.3f}")
     if "agdd" in s:
         a = s["agdd"]
         print("AGDD   " + "  ".join(f"{v}: recall {a[v]['recall']:.3f}" for v in agdd_eval.AGDD_VIEWS if v in a)
@@ -447,7 +449,8 @@ def build_parser():
     ap.add_argument("--limit", type=int, default=None, help="Smoke test: first N images per set (row goes to results_smoke.csv)")
     ap.add_argument("--reuse-cache", action="store_true", help="Re-score cached predictions (same checkpoint only)")
     ap.add_argument("--no-test", action="store_true")
-    ap.add_argument("--skip-ncugd", action="store_true")
+    ap.add_argument("--imgsz", type=int, default=None, help="M1 ablation: resize so the long side is N px first")
+    ap.add_argument("--whole", action="store_true", help="M1 ablation: one pass per image instead of 640 px tiles")
     ap.add_argument("--skip-agdd", action="store_true")
     ap.add_argument("--no-map", action="store_true", help="Skip Ultralytics mask mAP50 (Track A)")
     return ap

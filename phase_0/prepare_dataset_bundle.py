@@ -18,8 +18,10 @@ Sources:
   - crackseg9k (Parquet with base64 PNG image/mask, subsampled)
   - glass_defect_detection2 (YOLO boxes; crack + scratch, bubble/inclusion dropped)
   - Clean negatives: defect-free CUBIT tiles, empty-label glass_segmentation_2026
-    images, empty-mask fcd_108_facade images
-  - Isolated external test benchmark: ncugd_glass_crack (never tiled or split)
+    images, empty-mask fcd_108_facade images, every tile of the curtain_wall installation
+    photos (Brandon-Johns, real facade glass with no cracks: GEOMETRY_ONLY, never positives)
+  - Optional synthetic reflections (--reflect-frac): straight bright streaks drawn on a share of
+    the negatives, so glare lines become hard negatives (plan v4, M3 / E4b)
 
 Train/val assignment is deterministic and group-aware: every tile, view and
 Roboflow augmentation of the same source photo lands in the same split.
@@ -27,6 +29,7 @@ Roboflow augmentation of the same source photo lands in the same split.
 Usage:
   python phase_0/prepare_dataset_bundle.py --data-root data --out-dir data/processed_bundle_v1
   python phase_0/prepare_dataset_bundle.py --limit 20 --out-dir /tmp/bundle_smoke   # quick smoke run
+  python phase_0/prepare_dataset_bundle.py --only cardd --out-dir data/extras/cardd   # one source (see scripts/build_extras.sh)
 """
 
 from __future__ import annotations
@@ -49,9 +52,8 @@ import numpy as np
 from tqdm import tqdm
 
 IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
-EXTERNAL_SPLIT = "ncugd_test_external"
 BUNDLE_ENTRIES = {"images", "labels", "staged", "data.yaml", "summary_report.json", "manifest.csv"}
-DATASET_KEYS = ("gdd2", "ssgd", "agdd", "cardd", "ucrack", "cs9k", "neg_cubit", "neg_gseg", "neg_fcd", "ncugd")
+DATASET_KEYS = ("gdd2", "ssgd", "agdd", "cardd", "ucrack", "cs9k", "neg_cubit", "neg_gseg", "neg_fcd", "neg_cwall")
 
 Label = Tuple[int, List[float]]
 
@@ -256,8 +258,24 @@ def coco_polygons(ann: dict) -> List[List[float]]:
 # =====================================================================
 # 3. Slicing & Storage Engine
 # =====================================================================
+def add_reflection(img: np.ndarray, rng: random.Random) -> np.ndarray:
+    """1-3 long, straight, blurred bright streaks (window glare) screen-blended onto the image."""
+    h, w = img.shape[:2]
+    layer = np.zeros((h, w), np.float32)
+    for _ in range(rng.randint(1, 3)):
+        a, cx, cy, n = rng.uniform(0, np.pi), rng.uniform(0, w), rng.uniform(0, h), 2 * max(h, w)
+        dx, dy = n * np.cos(a), n * np.sin(a)
+        cv2.line(layer, (int(cx - dx), int(cy - dy)), (int(cx + dx), int(cy + dy)), rng.uniform(0.4, 1.0),
+                 rng.randint(1, 4), cv2.LINE_AA)
+    layer = cv2.GaussianBlur(layer, (0, 0), rng.uniform(0.5, 2.0))[..., None]
+    out = img.astype(np.float32)
+    return np.clip(out + layer * (255 - out), 0, 255).astype(np.uint8)
+
+
 class BundleWriter:
-    def __init__(self, out_dir: Path, val_ratio: float, tile_size: Optional[int], overlap: float):
+    def __init__(self, out_dir: Path, val_ratio: float, tile_size: Optional[int], overlap: float,
+                 reflect_frac: float = 0.0):
+        self.reflect_frac = reflect_frac
         self.out = out_dir
         self.val_ratio = val_ratio
         self.tile_size = tile_size
@@ -280,9 +298,12 @@ class BundleWriter:
 
     def write_image(
         self, img: np.ndarray, labels: List[Label], stem: str, dataset: str, group: str, source: str,
-        split: Optional[str] = None,
     ) -> int:
-        split = split or self.split_for(group)
+        split = self.split_for(group)
+        if not labels and self.reflect_frac > 0:
+            rng = random.Random(stem)  # deterministic per sample
+            if rng.random() < self.reflect_frac:
+                img, stem = add_reflection(img, rng), f"{stem}_refl"
         stem = self._unique_stem(stem)
         img_dir, lbl_dir = self.out / "images" / split, self.out / "labels" / split
         img_dir.mkdir(parents=True, exist_ok=True)
@@ -302,13 +323,12 @@ class BundleWriter:
 
     def write_sample(
         self, img: np.ndarray, labels: List[Label], stem: str, dataset: str, group: str, source: str,
-        split: Optional[str] = None, tile: bool = True,
     ) -> int:
         """Writes the image whole if it fits in one tile, otherwise only tiles that contain labels."""
         h, w = img.shape[:2]
         ts = self.tile_size
-        if not tile or ts is None or (w <= ts and h <= ts):
-            return self.write_image(img, labels, stem, dataset, group, source, split)
+        if ts is None or (w <= ts and h <= ts):
+            return self.write_image(img, labels, stem, dataset, group, source)
 
         px = [(cls_id, np.asarray(poly, dtype=np.float64).reshape(-1, 2) * [w, h]) for cls_id, poly in labels]
         written = 0
@@ -321,7 +341,7 @@ class BundleWriter:
             if not tile_labels:
                 continue
             written += self.write_image(
-                img[ty : ty + th, tx : tx + tw], tile_labels, f"{stem}_tile{i}", dataset, group, source, split
+                img[ty : ty + th, tx : tx + tw], tile_labels, f"{stem}_tile{i}", dataset, group, source
             )
         return written
 
@@ -484,7 +504,7 @@ def ingest_crackseg9k_parquet(
 
 def ingest_generic_yolo(
     src_dir: Path, writer: BundleWriter, prefix: str, dataset: str, keep: Dict[int, int],
-    max_samples: Optional[int], rng: random.Random, split: Optional[str] = None, tile: bool = True,
+    max_samples: Optional[int], rng: random.Random,
 ) -> int:
     """Ultralytics-layout dataset (images/ <-> labels/); unlabeled-class images become negatives."""
     imgs = cap([p for p in list_images(src_dir) if not p.stem.endswith("_mask")], max_samples, rng)
@@ -499,7 +519,7 @@ def ingest_generic_yolo(
             continue
         count += writer.write_sample(
             img, parse_yolo_labels(lbl_p, keep), f"{prefix}_{img_p.stem}", dataset,
-            f"{prefix}_{source_key(img_p.stem)}", str(img_p), split=split, tile=tile,
+            f"{prefix}_{source_key(img_p.stem)}", str(img_p),
         )
     if missing:
         print(f"  [{dataset}] {missing} images without label files skipped")
@@ -581,6 +601,24 @@ def ingest_empty_mask_negatives(
     return count
 
 
+def ingest_tile_negatives(
+    src_dir: Path, writer: BundleWriter, prefix: str, dataset: str, max_tiles: int, rng: random.Random
+) -> int:
+    """Every tile of label-free photos (curtain_wall: dataset/images, 140 facade photos without cracks)."""
+    count = 0
+    for img_p in tqdm(list_images(src_dir / "dataset" / "images"), desc=dataset):
+        img = read_image(img_p)
+        if img is None:
+            continue
+        h, w = img.shape[:2]
+        for i, (tx, ty, tw, th) in enumerate(get_tile_coordinates(w, h, writer.tile_size or max(w, h), writer.overlap)):
+            if count >= max_tiles:
+                return count
+            count += writer.write_image(img[ty : ty + th, tx : tx + tw], [], f"{prefix}_{img_p.stem}_tile{i}",
+                                        dataset, f"{prefix}_{img_p.stem}", str(img_p))
+    return count
+
+
 # =====================================================================
 # 5. Main Assembly Loop
 # =====================================================================
@@ -607,6 +645,9 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--exclude", nargs="*", default=["agdd"], choices=DATASET_KEYS,
                         help="Datasets to skip (default: agdd, the external test set)")
+    parser.add_argument("--only", nargs="+", default=None, choices=DATASET_KEYS, help="Ingest only these (overrides --exclude)")
+    parser.add_argument("--reflect-frac", type=float, default=0.0, help="Share of negatives given synthetic reflections")
+    parser.add_argument("--max-neg-cwall", type=int, default=2000, help="Curtain-wall negative tiles")
     parser.add_argument("--limit", type=int, default=None, help="Cap source images per dataset (smoke runs)")
     parser.add_argument("--max-ucrack", type=int, default=1500)
     parser.add_argument("--max-cs9k", type=int, default=2500)
@@ -624,7 +665,9 @@ def main():
     if not root.is_dir():
         sys.exit(f"data root {root} does not exist")
     prepare_out_dir(out, root)
-    writer = BundleWriter(out, args.val_ratio, args.tile_size, args.overlap)
+    if args.only:
+        args.exclude = [k for k in DATASET_KEYS if k not in args.only]
+    writer = BundleWriter(out, args.val_ratio, args.tile_size, args.overlap, args.reflect_frac)
 
     def lim(n: Optional[int]) -> Optional[int]:
         if args.limit is None:
@@ -655,9 +698,8 @@ def main():
          lambda d, r: ingest_empty_label_negatives(d, writer, "neggseg", "neg_glass2026", lim(args.max_neg_gseg), r)),
         ("neg_fcd", "fcd_108_facade", "empty-mask fcd_108_facade negatives",
          lambda d, r: ingest_empty_mask_negatives(d, writer, "negfcd", "neg_fcd", lim(args.max_neg_fcd), r)),
-        ("ncugd", "ncugd_glass_crack", "ncugd_glass_crack as isolated external test benchmark",
-         lambda d, r: ingest_generic_yolo(d, writer, "ncugd", "ncugd_glass_crack", {0: 0}, None, r,
-                                          split=EXTERNAL_SPLIT, tile=False)),
+        ("neg_cwall", "curtain_wall", "curtain-wall facade negative tiles",
+         lambda d, r: ingest_tile_negatives(d, writer, "negcwall", "neg_curtain_wall", lim(args.max_neg_cwall), r)),
     ]
 
     if "agdd" not in args.exclude:
@@ -679,13 +721,9 @@ def main():
         sys.exit("No training samples were written; check --data-root")
 
     (out / "data.yaml").write_text(
-        f"path: {out.resolve()}\n"
         "train: images/train\n"
         "val: images/val\n"
-        f"test: images/{EXTERNAL_SPLIT}\n"
-        "\n"
-        "names:\n"
-        "  0: crack\n"
+        "\nnames:\n  0: crack\n"
     )
 
     with open(out / "manifest.csv", "w", newline="") as f:
@@ -707,7 +745,7 @@ def main():
     print(f"YAML configuration: {out / 'data.yaml'}")
     print(f"Summary report: {out / 'summary_report.json'}")
     for d, c in writer.stats.items():
-        splits = ", ".join(f"{s}={c[s]}" for s in ("train", "val", EXTERNAL_SPLIT) if c[s])
+        splits = ", ".join(f"{s}={c[s]}" for s in ("train", "val") if c[s])
         print(f"  * {d:25}: {splits}  ({c['polygons']} polygons)")
     print(f"  = totals: {dict(totals)}")
 

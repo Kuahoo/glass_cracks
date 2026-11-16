@@ -25,12 +25,10 @@ env .venv/bin/python scripts/profile_datasets.py --children data temp/glass_crac
 | fcd_108_facade | 281 | 12MB | 512x512 (1) | PNG masks |  | 3.89 | 1 |
 | glass_defect_detection2 | 578 | 23MB | 640x640 (1) | YOLO polygon; YOLO box; quad/OBB (9 tokens) | 0.269 | 4.82 | 2 |
 | glass_segmentation_2026 | 1176 | 51MB | 640x640 (1) | YOLO polygon; quad/OBB (9 tokens) | 0.065 | 5.52 | 2 |
-| ncugd_glass_crack | 26 | 1MB | 640x480 (1) | YOLO polygon | 0.0 | 9.55 | 0 |
 | processed_bundle_v1 | 8255 | 1GB | 1024x1000 (147) | YOLO polygon; quad/OBB (9 tokens) | 0.077 | 5.42 | 4 |
 | fcd_108_grouped | 270 | 12MB | 512x512 (1) | PNG masks |  | 3.89 | 1 |
 | glass_merged_linear | 1276 | 51MB | 640x640 (1) | YOLO polygon; quad/OBB (9 tokens) | 0.449 | 4.29 | 3 |
 | glass_merged_seg | 1276 | 51MB | 640x640 (1) | YOLO polygon; quad/OBB (9 tokens) | 0.219 | 6.45 | 2 |
-| ncugd_external_test | 19 | 785KB | 640x480 (1) | YOLO polygon | 0.0 | 9.46 | 0 |
 
 ## Warnings per dataset
 
@@ -75,12 +73,8 @@ env .venv/bin/python scripts/profile_datasets.py --children data temp/glass_crac
 - Lines with 9 tokens found: either oriented boxes (4 corner points) or 4-point polygons. Open a few files and confirm before converting.
 - All images share one square size: likely resized/stretched (Roboflow-style). Crack geometry/aspect may be distorted; physical width is not recoverable.
 
-### ncugd_glass_crack
-- none
-
 ### processed_bundle_v1
 - Lines with 9 tokens found: either oriented boxes (4 corner points) or 4-point polygons. Open a few files and confirm before converting.
-- labels dir 'labels/ncugd_test_external': 8229 image(s) have no label file there (treat as unlabeled, not as negatives, unless confirmed).
 - labels dir 'labels/train': 7 degenerate polygon(s) (<3 points or zero area).
 - labels dir 'labels/val': 6 degenerate polygon(s) (<3 points or zero area).
 
@@ -96,5 +90,3 @@ env .venv/bin/python scripts/profile_datasets.py --children data temp/glass_crac
 - Lines with 9 tokens found: either oriented boxes (4 corner points) or 4-point polygons. Open a few files and confirm before converting.
 - All images share one square size: likely resized/stretched (Roboflow-style). Crack geometry/aspect may be distorted; physical width is not recoverable.
 
-### ncugd_external_test
-- none

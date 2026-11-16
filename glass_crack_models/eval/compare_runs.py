@@ -10,7 +10,6 @@ No GPU and no data needed. Per run, from the threshold sweeps (0.05 .. 0.95):
   (an oracle number: never used to pick anything);
 - AGDD per view at the frozen threshold (recall, crack recall, precision) and AP per view; the pair
   recall is left out on purpose (report the views separately);
-- NCUGD recall at the frozen threshold and the best recall at any threshold.
 Then mean +/- SD over seeds per experiment. Writes <out>/compare_runs.csv (per run) and
 <out>/compare_runs.md (tables), default out = OUT_ROOT/results.
 """
@@ -59,11 +58,6 @@ def best_f1(rows: list[dict]) -> float:
     return max(vals) if vals else 0.0
 
 
-def max_recall(rows: list[dict], rkey: str = "recall") -> float:
-    vals = [r[rkey] for r in rows if _ok(r.get(rkey))]
-    return max(vals) if vals else 0.0
-
-
 def run_metrics(summary: dict, precisions: list[float]) -> dict:
     meta, sweeps = summary["meta"], summary.get("sweeps", {})
     out = {"run": f"{meta['exp_id']}_s{meta['seed']}", "exp_id": meta["exp_id"], "seed": meta["seed"],
@@ -83,9 +77,6 @@ def run_metrics(summary: dict, precisions: list[float]) -> dict:
                 out[f"test_recall@p{p:.2f}"] = r["recall"]
                 out[f"test_fp100@p{p:.2f}"] = r["fp100"]
                 out[f"test_thr@p{p:.2f}"] = r["thr"] if r["thr"] is not None else float("nan")
-    if "ncugd" in summary:
-        out["ncugd_recall@op"] = summary["ncugd"].get("recall", float("nan"))
-        out["ncugd_max_recall"] = max_recall(sweeps.get("NCUGD", []))
     agdd = summary.get("agdd", {})
     for v in AGDD_VIEWS:
         s = agdd.get(v)
@@ -149,7 +140,6 @@ def markdown(agg: dict, precisions: list[float]) -> str:
     for v in AGDD_VIEWS:
         agdd_cols += [(f"agdd_{v}_recall@op", f"`{v}/` recall", 3), (f"agdd_{v}_crack_recall@op", f"`{v}/` crack recall", 3),
                       (f"agdd_{v}_ap", f"`{v}/` PR area", 3)]
-    agdd_cols += [("ncugd_recall@op", "NCUGD recall", 3), ("ncugd_max_recall", "NCUGD best recall, any thr", 3)]
 
     missing = (float("nan"), float("nan"), 0)
 

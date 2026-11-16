@@ -1,0 +1,7 @@
+# E6 stage 1 (plan v4, M4 arm B): pretrain on CarDD `crack` + `glass shatter` (1,077 train / 183 val images,
+# single class). Run only if E5 does not beat the baseline. One seed, no glass evaluation.
+base: e1_yolo_4class.yaml
+exp_id: E6pre
+data: ${DATA_ROOT}/extras/cardd/data.yaml
+eval: false
+notes: "CarDD crack/glass-shatter pretraining"

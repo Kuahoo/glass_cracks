@@ -112,6 +112,26 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg["dataset"], "merged")
         self.assertEqual(cfg["model"], "yolo26s-seg.pt")
         self.assertEqual(cfg["train"]["scale"], 0.7)
+        self.assertEqual(cfg["train"]["epochs"], 150)  # nested `train:` merges with the base
+        self.assertIn("MotionBlur", cfg["albu"][0])
+
+    def test_e4b_adds_hard_negatives_to_e4(self):
+        from glass_crack_models.config import load_config
+        cfg = load_config("e4b_yolo_hardneg.yaml")
+        self.assertEqual(cfg["albu"], load_config("e4_yolo_robust.yaml")["albu"])
+        self.assertEqual(cfg["hard_negatives"]["frac"], 0.3)
+
+
+
+class SemsegModelTests(unittest.TestCase):
+    def test_build_model_default_is_e3_unet_and_arch_is_configurable(self):
+        import torch
+        from glass_crack_models.train.semseg_common import build_model
+        self.assertEqual(type(build_model()).__name__, "Unet")
+        for arch in ("unet", "FPN", "DeepLabV3Plus"):
+            m = build_model(arch, "resnet18", None, 1).eval()
+            with torch.no_grad():
+                self.assertEqual(tuple(m(torch.zeros(1, 3, 64, 64)).shape), (1, 1, 64, 64))
 
 
 if __name__ == "__main__":

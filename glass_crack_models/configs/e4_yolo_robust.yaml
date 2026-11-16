@@ -1,21 +1,14 @@
-# E4 starting point (Phase 4, step 1): scale and appearance augmentation Roboflow did not apply.
-# Built on E1 (4 classes), the Track A winner on TIDE (fewer false positives, same recall as E2).
-# Downscale-heavy scale jitter pushes cracks toward drone-distance pixel sizes; colour shifts beyond +-15%.
-# No extra blur/noise (already on the Roboflow pair copies).
+# E4 (plan v4, M2): E1 + robustness augmentation, train split only. Built on E1 (4 classes), the Track A winner.
+# Downscale-heavy scale jitter (drone-distance crack widths), stronger brightness/saturation shifts,
+# motion blur (drone vibration) and heavy JPEG compression. Compare with E1, threshold-free (compare_runs).
+# The earlier E4 recipe (scale/colour only, E4_s0 on TIDE) is archived as E4old; see the TIDE notebook.
 base: e1_yolo_4class.yaml
 exp_id: E4
-notes: "scale/appearance aug"
+notes: "scale/colour/motion-blur/jpeg aug"
 train:
-  epochs: 150
-  imgsz: 640
-  batch: 16
-  patience: 40
-  cos_lr: true
-  close_mosaic: 15
-  flipud: 0.5
-  fliplr: 0.5
-  degrees: 0.0
-  workers: 4
   scale: 0.7
-  hsv_v: 0.5
   hsv_s: 0.7
+  hsv_v: 0.5
+albu:                        # Albumentations pixel transforms (replace Ultralytics' p=0.01 defaults)
+  - MotionBlur: {blur_limit: [3, 15], p: 0.3}
+  - ImageCompression: {quality_range: [15, 60], p: 0.3}

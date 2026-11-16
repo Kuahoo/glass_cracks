@@ -25,7 +25,6 @@ import argparse
 import collections
 import csv
 import json
-import math
 import os
 import random
 import re
@@ -493,7 +492,6 @@ def profile_dataset(root: Path, args) -> dict:
             continue
         by_dir[t.parent].append(t)
     label_dirs = {}
-    image_dirs = {p.parent for p in image_files}
     for d, fl in by_dir.items():
         # label dir if name hints OR many txt files whose stems match image stems somewhere
         stems = {(split_of(f, root), f.stem) for f in fl[:200]}

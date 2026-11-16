@@ -1,0 +1,6 @@
+# E6 stage 2: E1 recipe on the glass core, initialised from E6pre_s0 (CarDD). Compare against E5 / E4b.
+base: e1_yolo_4class.yaml
+exp_id: E6
+model: ${OUT_ROOT}/runs/E6pre_s0/weights/best.pt
+pretrain: cardd
+notes: "CarDD pretrain -> glass fine-tune"

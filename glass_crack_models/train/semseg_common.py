@@ -15,11 +15,15 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], np.float32)
 
 
-def build_model(arch: str, encoder: str, encoder_weights: str | None, n_classes: int = 1):
+DEFAULT_ARCH, DEFAULT_ENCODER = "unet", "resnet34"  # E3
+
+
+def build_model(arch: str = DEFAULT_ARCH, encoder: str = DEFAULT_ENCODER, encoder_weights: str | None = None,
+                n_classes: int = 1):
+    """Any segmentation-models-pytorch architecture by name (case-insensitive): unet, unetplusplus, fpn,
+    deeplabv3plus, segformer, ... with any of its encoders (resnet34, resnet50, mit_b2, ...)."""
     import segmentation_models_pytorch as smp
-    if arch.lower() != "unet":
-        raise ValueError(f"unknown arch {arch}")
-    return smp.Unet(encoder_name=encoder, encoder_weights=encoder_weights, classes=n_classes)
+    return smp.create_model(arch, encoder_name=encoder, encoder_weights=encoder_weights, classes=n_classes)
 
 
 def to_tensor(img_rgb: np.ndarray) -> torch.Tensor:

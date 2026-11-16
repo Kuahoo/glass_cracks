@@ -1,4 +1,4 @@
-"""Per-image counts and summary statistics for the merged-set / NCUGD evaluation.
+"""Per-image counts and summary statistics for the merged-set evaluation.
 
 Every per-image record holds additive counts only, so any statistic below can be recomputed from
 group sums (cluster bootstrap) or from a whole split.

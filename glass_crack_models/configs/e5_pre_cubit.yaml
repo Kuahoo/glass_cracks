@@ -1,0 +1,11 @@
+# E5 stage 1 (plan v4, M4 arm A): pretrain on CUBIT-InSeg crack tiles (CR1 only, 1024 px windows -> 640,
+# class 0 = linear_defect). One seed; E5 fine-tunes from its best.pt. No glass evaluation (eval: false).
+base: e1_yolo_4class.yaml
+exp_id: E5pre
+data: ${DATA_ROOT}/extras/cubit_tiles/data.yaml
+eval: false
+notes: "CUBIT crack pretraining"
+train:
+  epochs: 30
+  patience: 10
+  close_mosaic: 5

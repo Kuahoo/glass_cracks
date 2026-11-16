@@ -1,0 +1,8 @@
+# E4b (plan v4, M3): E4 recipe + crack-free hard negatives making up 30% of the train list.
+# extras/hardneg: curtain-wall facade glass, clean CUBIT and facade tiles; half carry synthetic glare streaks.
+base: e4_yolo_robust.yaml
+exp_id: E4b
+notes: "E4 + 30% hard negatives"
+hard_negatives:
+  dir: ${DATA_ROOT}/extras/hardneg/images/train
+  frac: 0.3

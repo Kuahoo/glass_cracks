@@ -1,4 +1,7 @@
-"""Track B: semantic segmentation (U-Net / SegFormer via segmentation-models-pytorch), E3 and ablations.
+"""Track B: semantic segmentation (segmentation-models-pytorch), E3 and cross-architecture comparisons.
+
+Config keys `arch` (unet, unetplusplus, fpn, deeplabv3plus, segformer, ...) and `encoder` (resnet34,
+resnet50, mit_b2, ...) pick the model; defaults unet + resnet34 (E3).
 
     python -m glass_crack_models.train.train_semseg --config e3_unet_r34.yaml [--seed 1]
     python -m glass_crack_models.train.train_semseg --config e3_unet_r34.yaml --smoke    # laptop CPU check
@@ -25,8 +28,8 @@ from glass_crack_models import paths
 from glass_crack_models.config import load_config
 from glass_crack_models.data.rasterize import image_paths
 from glass_crack_models.infer.predictors import torch_device
-from glass_crack_models.train.semseg_common import (SegDataset, build_augment, build_model, make_loss,
-                                                    train_images_and_weights)
+from glass_crack_models.train.semseg_common import (DEFAULT_ARCH, DEFAULT_ENCODER, SegDataset, build_augment,
+                                                    build_model, make_loss, train_images_and_weights)
 
 CLASSES = ["linear_defect"]
 
@@ -87,6 +90,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
+    cfg.setdefault("arch", DEFAULT_ARCH)  # any smp architecture / encoder name; see semseg_common.build_model
+    cfg.setdefault("encoder", DEFAULT_ENCODER)
     if args.seed is not None:
         cfg["seed"] = args.seed
     if args.weighting:

@@ -1,0 +1,6 @@
+# E5 stage 2: E1 recipe on the glass core, initialised from E5pre_s0 (CUBIT). Compare against E1 / E4b.
+base: e1_yolo_4class.yaml
+exp_id: E5
+model: ${OUT_ROOT}/runs/E5pre_s0/weights/best.pt
+pretrain: cubit
+notes: "CUBIT pretrain -> glass fine-tune"

@@ -1,4 +1,4 @@
-"""Experiment config loading (YAML with an optional `base:`)."""
+"""Experiment config loading (YAML with an optional `base:`; nested dicts merge one level deep)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,7 +15,8 @@ def load_config(path: str | Path) -> dict:
     cfg = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     if "base" in cfg:
         base = load_config(p.parent / cfg.pop("base"))
-        base.update(cfg)
+        for k, v in cfg.items():  # nested dicts (e.g. `train:`) are merged, so a child lists only what it changes
+            base[k] = {**base[k], **v} if isinstance(v, dict) and isinstance(base.get(k), dict) else v
         cfg = base
     cfg["_config_path"] = str(p.resolve())
     return cfg

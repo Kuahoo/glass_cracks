@@ -2,7 +2,7 @@
 # One-time (and safe to re-run) setup on the SDSU TIDE JupyterHub, PyTorch Notebook image.
 #   bash scripts/tide/setup.sh
 # 1. Python venv in $HOME that reuses the image's CUDA torch, plus the pinned packages.
-# 2. Unzip $GC_ROOT/bundle_colab.zip into $DATA_ROOT (first run only).
+# 2. Unzip $GC_ROOT/bundle_colab.zip, then the optional extras.zip, into $DATA_ROOT (first run only).
 # 3. Rebuild the machine-specific dataset files (relabel_classes) and print a session report.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
@@ -30,21 +30,40 @@ else:
     print(f"torch {torch.__version__}  cuda {torch.version.cuda}  gpu {torch.cuda.get_device_name(0)}")
 EOF
 
+# Validate a zip (an upload cut short or a saved Drive page is not one), then extract it into $DATA_ROOT.
+unzip_into_data() {
+    if ! "$PY" -c "import sys, zipfile; sys.exit(not zipfile.is_zipfile(sys.argv[1]))" "$1"; then
+        echo "ERROR: $1 is not a valid zip ($(stat -c %s "$1") bytes)." >&2
+        head -c 200 "$1" | grep -qi "<html\|<!doctype" && echo "  It is an HTML page: a Drive link saved the download page, not the file." >&2
+        echo "  Delete it and upload again (wait for the upload bar to finish), or fetch it with gdown." >&2
+        exit 1
+    fi
+    echo "== unzipping $1 -> $DATA_ROOT"
+    mkdir -p "$DATA_ROOT"
+    "$PY" -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$1" "$DATA_ROOT"
+}
+
 if [ ! -f "$DATA_ROOT/processed/glass_merged_seg/manifest.csv" ]; then
     ZIP="$GC_ROOT/bundle_colab.zip"
     if [ ! -f "$ZIP" ]; then
         echo "ERROR: upload bundle_colab.zip to $ZIP first (JupyterLab upload button), then re-run." >&2
         exit 1
     fi
-    if ! "$PY" -c "import sys, zipfile; sys.exit(not zipfile.is_zipfile(sys.argv[1]))" "$ZIP"; then
-        echo "ERROR: $ZIP is not a valid zip ($(stat -c %s "$ZIP") bytes; expected about 193 MB)." >&2
-        head -c 200 "$ZIP" | grep -qi "<html\|<!doctype" && echo "  It is an HTML page: a Drive link saved the download page, not the file." >&2
-        echo "  Delete it and upload again (wait for the upload bar to finish), or fetch it with gdown." >&2
-        exit 1
+    unzip_into_data "$ZIP"
+fi
+
+# Plan v4 extras (scripts/build_extras.sh on the laptop): CUBIT tiles, CarDD subset, hard negatives.
+# Needed only by E4b, E5 and E6. Upload extras.zip to $GC_ROOT, or set EXTRAS_URL to a Google Drive link.
+if [ ! -f "$DATA_ROOT/extras/cubit_tiles/data.yaml" ]; then
+    EXTRAS="$GC_ROOT/extras.zip"
+    if [ ! -f "$EXTRAS" ] && [ -n "${EXTRAS_URL:-}" ]; then
+        "$PY" -m pip install -q gdown && "$PY" -m gdown --fuzzy "$EXTRAS_URL" -O "$EXTRAS"
     fi
-    echo "== unzipping $ZIP -> $DATA_ROOT"
-    mkdir -p "$DATA_ROOT"
-    "$PY" -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$ZIP" "$DATA_ROOT"
+    if [ -f "$EXTRAS" ]; then
+        unzip_into_data "$EXTRAS" && rm "$EXTRAS"
+    else
+        echo "NOTE: no $EXTRAS yet; E1-E4 and the R0-R2 ablation run without it, E4b/E5/E6 need it."
+    fi
 fi
 
 cd "$CODE_DIR"

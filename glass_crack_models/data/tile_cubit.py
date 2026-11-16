@@ -158,7 +158,8 @@ def main(argv=None):
     present = [SPLITS[s] for s in splits]
     (out / "data.yaml").write_text(
         f"# CUBIT-InSeg CR1 crack tiles ({args.windows} px windows -> {args.out_size} px), class 0 = linear_defect\n"
-        f"path: {out}\ntrain: {'train/images' if 'train' in present else present[0] + '/images'}\n"
+        "# no `path:` key, so Ultralytics resolves splits next to this file (portable laptop -> TIDE)\n"
+        f"train: {'train/images' if 'train' in present else present[0] + '/images'}\n"
         f"val: {'valid/images' if 'valid' in present else present[0] + '/images'}\n"
         f"test: {'test/images' if 'test' in present else present[0] + '/images'}\n"
         "nc: 1\nnames: [linear_defect]\n")
