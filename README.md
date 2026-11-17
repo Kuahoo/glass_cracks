@@ -44,7 +44,7 @@ Repo root `/home/kuahoo/work/sdsu/2026_fall_sdsu/cracked`:
 | `phase_0/` | `prepare_dataset_bundle.py` (also builds the CarDD and hard-negative extras via `--only`), `RESEARCH.md` |
 | `docs/profile_summary.md` | Snapshot of the 2026-10-15 dataset profile (full JSON under `outputs/profile/`, git-ignored) |
 | `temp/` (git-ignored) | `bundle_colab.zip` (193,309,489 bytes, MD5 `6410cf98724221591a7d8c68ca1ff453`), `glass_crack_dataset_bundle/` (laptop `DATA_ROOT`) |
-| `data/` (git-ignored) | raw downloads, `processed_bundle_v1/`, `extras/` + `extras.zip` (plan v4 sets, Section 3.4) |
+| `data/` (git-ignored) | raw downloads (cleaned 2026-11-05, Section 3.5), `rf_*/` Roboflow downloads, `extras/` + `extras.zip` (plan v4 sets, Section 3.4) |
 | `outputs/` (git-ignored) | laptop smoke runs and `profile/` |
 
 Git-ignored: `data/`, `outputs/`, `temp/`, `*.pt`, `*.pth`. Never commit datasets or weights. Never write or commit the Roboflow key (`ROBOFLOW_API_KEY` lives only in the shell environment).
@@ -94,18 +94,24 @@ Use a new job name per seed, one job at a time. Rerunning an interrupted run res
 | curtain_wall (Brandon-Johns, CC BY 4.0) | 140 (+60 glass/frame/other masks) | **GEOMETRY_ONLY**: crack-free hard negatives | Cloned 2026-11-05 into `data/curtain_wall`; 2048x1536 PNG; no crack labels |
 | GSDNet CGD / AiGD / RSGD | - | **BLOCKED** (Baidu Pan, needs a Baidu account: BaiduPCS-Go + BDUSS) | Links/codes in `agent_plan.md` §1 |
 | Roboflow glass-crack-detection | - | **BLOCKED_DELETED**; replaced by Ultralytics crack-seg (already on disk) | |
-| processed_bundle_v1 | 8,255 | Phase_0 bundle (not yet used by training) | Group-aware split; 13 degenerate polygons; AGDD excluded |
+| Roboflow `links.md` sets (`scripts/fetch_roboflow.py`) | tongji 684, spman 98 (x5 aug), skyvision 78, gdd1296 v1 1,296 | Pane-level broken glass; external curtain-wall test; windshield proxy | Labels mark whole shattered panes (boxes / coarse polygons), not crack lines. glass-hshyy dropped (same images as tongji); bsc off-domain |
 
-### 3.4 Plan v4 extras (`scripts/build_extras.sh` -> `data/extras.zip`, 2,542,167,719 bytes, MD5 `88c68736186063c92dadec38b868e0cd`)
+### 3.4 Plan v4 extras (`scripts/build_extras.sh` -> `data/extras.zip`, 2,913,859,740 bytes, MD5 `94097683c3cb8069a1d8d8617a4fa452`)
 Built 2026-11-05 on the laptop; unzips to `$DATA_ROOT/extras/` on TIDE (upload to `~/glass_crack/extras.zip`, or Google Drive + `EXTRAS_URL=<link> bash scripts/tide/setup.sh`). Generated `data.yaml` files have no `path:` key, so they work wherever they are unzipped.
 
 | Set | Contents | Used by |
 |---|---|---|
 | `extras/cubit_tiles/` | CUBIT CR1 crack tiles, 1024 px windows (25% overlap) -> 640, class `linear_defect`; 58,844 tiles (51,845 with cracks), CUBIT's own train/valid/test split | E5pre |
 | `extras/cardd/` | CarDD `crack` + `glass shatter`, single class; 1,077 train / 183 val images (group-aware split) | E6pre |
+| `extras/broken_pane/` | tongji + spman, class `broken_glass`; 333 train / 119 valid / 68 test (171 crack-free facade images). Augmentation copies and 262 near-duplicates removed (tongji repeated crops and mirrors across its own splits); none overlap the glass core or AGDD | Pane-level detector / hard examples (not yet in a config) |
+| `extras/curtainwall_test/` | skyvision facade photos, class `broken_glass`, 78 test images | External curtain-wall test (plan §5), scored per pane |
+| `extras/windshield/` | gdd1296 v1 (chip, scratch); built once `fetch_roboflow.py gdd1296` has been run | Optional automotive proxy, like CarDD |
 | `extras/hardneg/images/train/` | 1,441 crack-free tiles: 840 curtain-wall, 600 clean CUBIT, 1 facade; 740 carry synthetic glare streaks | E4b (30% of the train list) |
 
-`phase_0/prepare_dataset_bundle.py` (single class `0: crack`, AGDD excluded) also still builds `processed_bundle_v1/` (7,022 train / 1,207 val); it is not used by training.
+### 3.5 Data cleanup
+**2026-11-05:** Removed CUBIT `images.zip`/`labels.zip` (exact copies of the extracted folders, 18.7 GB), `CarDD_release/CarDD_SOD` (only `CarDD_COCO` is used), `processed_bundle_v1` (never used for training; rebuild with `phase_0/prepare_dataset_bundle.py`), `ncugd_glass_crack` (dropped), `SSGD/__MACOSX`, `curtain_wall/.git` and its code examples, `rf_hshyy` (same images as tongji) and the augmented gdd1296 v2.
+
+**2026-11-16:** Confirmed NCUGD gone from `data/`; deleted leftover `ncugd_check` and eval/predict NCUGD caches under `outputs/`. Removed parked unused sets `SSGD` (~1.1 GB) and `crackseg9k` (~4 GB), and superseded raw `rf_skyvision` (replaced by `extras/curtainwall_test`). Still on disk as optional contingency: `crackSegUltralytics` (~122 MB). Cubit raw (`cubit_inseg`, ~20 GB) kept so tiles can be rebuilt; `extras.zip` (~2.8 GB) kept for TIDE upload alongside `extras/`.
 
 ---
 

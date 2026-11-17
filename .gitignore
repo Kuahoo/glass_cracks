@@ -83,3 +83,6 @@ predictions/
 # Optional local config files
 config.local.yaml
 config.local.yml
+
+# Annotation export bundles (CVAT / Label Studio)
+/exports/

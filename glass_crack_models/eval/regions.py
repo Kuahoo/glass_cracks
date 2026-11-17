@@ -23,11 +23,6 @@ class Region:
     def area(self) -> int:
         return int(self.mask.sum())
 
-    def full(self, h: int, w: int) -> np.ndarray:
-        m = np.zeros((h, w), bool)
-        m[self.y0:self.y1, self.x0:self.x1] = self.mask
-        return m
-
     def window(self, x0: int, y0: int, x1: int, y1: int) -> np.ndarray:
         """This region's mask rendered into the window [x0, x1) x [y0, y1)."""
         out = np.zeros((y1 - y0, x1 - x0), bool)

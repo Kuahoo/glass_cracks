@@ -41,6 +41,21 @@ def seed_everything(seed: int):
     torch.cuda.manual_seed_all(seed)
 
 
+def _cpu_byte_rng(state) -> torch.Tensor:
+    """`torch.set_rng_state` / Generator.set_state require a CPU uint8 tensor (ByteTensor)."""
+    t = state.cpu().contiguous() if torch.is_tensor(state) else torch.as_tensor(state)
+    return t.to(dtype=torch.uint8).cpu()
+
+
+def restore_rng(cpu_state, generator: torch.Generator, sampler_state) -> None:
+    """Best-effort RNG restore; skip rather than crash on version/device mismatches."""
+    try:
+        torch.set_rng_state(_cpu_byte_rng(cpu_state))
+        generator.set_state(_cpu_byte_rng(sampler_state))
+    except Exception as exc:  # noqa: BLE001 — resume should not die on RNG alone
+        print(f"warning: could not restore RNG state ({exc}); continuing with fresh RNG")
+
+
 def atomic_save(obj, path: Path):
     tmp = path.with_suffix(path.suffix + ".tmp")
     torch.save(obj, tmp)
@@ -114,7 +129,7 @@ def main(argv=None):
     train_imgs, weights = train_images_and_weights(data_dir, cfg.get("weighting", "balanced"))
     valid_imgs = image_paths(data_dir / "valid")
     if args.smoke:
-        from glass_crack_models.eval.run_eval import spread
+        from glass_crack_models.protocol import spread
         keep = set(spread(list(range(len(train_imgs))), 16))
         train_imgs = [p for i, p in enumerate(train_imgs) if i in keep]
         weights = [w for i, w in enumerate(weights) if i in keep]
@@ -141,19 +156,23 @@ def main(argv=None):
     start, best, stale = 0, -1.0, 0
 
     if last_p.exists() and not args.fresh:
-        st = torch.load(last_p, map_location=device, weights_only=False)
+        # Always load on CPU so rng_* stay CPU ByteTensors (map_location=cuda breaks set_rng_state).
+        st = torch.load(last_p, map_location="cpu", weights_only=False)
         model.load_state_dict(st["model"])
         opt.load_state_dict(st["optimizer"])
         sched.load_state_dict(st["scheduler"])
         scaler.load_state_dict(st["scaler"])
         start, best, stale = st["epoch"] + 1, st["best"], st["stale"]
-        torch.set_rng_state(st["rng_cpu"])
-        g.set_state(st["rng_sampler"])
+        restore_rng(st["rng_cpu"], g, st["rng_sampler"])
         print(f"{name}: resumed at epoch {start} (best valid Dice {best:.4f})")
     else:
         (run_dir / "experiment.json").write_text(json.dumps(cfg, indent=1, default=str))
 
     patience = int(cfg.get("patience", 25))
+    # Prior early-stop left stale >= patience; clear it so a re-launch actually trains again.
+    if stale >= patience:
+        print(f"{name}: clearing prior early-stop counter (stale={stale}) so training continues")
+        stale = 0
     for epoch in range(start, epochs):
         if stale >= patience:
             print(f"early stop: no valid improvement for {patience} epochs")
@@ -180,7 +199,8 @@ def main(argv=None):
                          "val_dice": dice, "experiment": cfg}, best_p)
         atomic_save({"model": model.state_dict(), "optimizer": opt.state_dict(), "scheduler": sched.state_dict(),
                      "scaler": scaler.state_dict(), "epoch": epoch, "best": best, "stale": stale,
-                     "rng_cpu": torch.get_rng_state(), "rng_sampler": g.get_state()}, last_p)
+                     "rng_cpu": _cpu_byte_rng(torch.get_rng_state()),
+                     "rng_sampler": _cpu_byte_rng(g.get_state())}, last_p)
         row = {"epoch": epoch, "train_loss": round(float(np.mean(losses)), 5), "val_loss": round(val_loss, 5),
                "val_dice": round(dice, 5), "lr": lr, "seconds": round(time.time() - t0, 1)}
         new = not hist_p.exists()

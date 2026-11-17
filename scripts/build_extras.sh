@@ -5,6 +5,8 @@
 #   cubit_tiles/  CUBIT-InSeg CR1 crack tiles, 1024 px windows -> 640, class linear_defect  (E5 pretraining)
 #   cardd/        CarDD `crack` + `glass shatter`, single class                             (E6 pretraining)
 #   hardneg/      crack-free curtain-wall / CUBIT / facade tiles, half with synthetic glare (E4b)
+#   broken_pane/, curtainwall_test/, windshield/   cleaned Roboflow sets (scripts/fetch_roboflow.py;
+#                 download first with ROBOFLOW_API_KEY, this step only re-prepares data/rf_*)
 # Upload extras.zip to ~/glass_crack/ on TIDE (or Drive + EXTRAS_URL) and re-run scripts/tide/setup.sh.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -16,5 +18,6 @@ PY="${PY:-.venv/bin/python}"
 "$PY" phase_0/prepare_dataset_bundle.py --data-root data --only cardd --out-dir data/extras/cardd
 "$PY" phase_0/prepare_dataset_bundle.py --data-root data --only neg_cwall neg_cubit neg_fcd \
     --reflect-frac 0.5 --val-ratio 0 --out-dir data/extras/hardneg
+"$PY" scripts/fetch_roboflow.py --no-download
 (cd data && rm -f extras.zip && zip -qr -0 extras.zip extras)   # JPEGs: store, do not recompress
 ls -l data/extras.zip

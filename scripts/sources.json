@@ -1,0 +1,12 @@
+{
+  "_comment": "Sources outside the glass core. `split_layout` is auto-detected; run scripts/gate_sources.py before exporting any of them.",
+  "cubit_tiles": {"path": "data/extras/cubit_tiles", "role": "pretrain (CUBIT crack tiles, tiled at 1024)"},
+  "cardd": {"path": "data/extras/cardd", "role": "pretrain (CarDD crack + glass shatter)"},
+  "hardneg": {"path": "data/extras/hardneg", "role": "negatives (crack-free tiles, half with synthetic glare)"},
+  "broken_pane": {"path": "data/extras/broken_pane", "role": "train (cleaned rf_tongji + rf_spman)"},
+  "curtainwall_test": {"path": "data/extras/curtainwall_test", "role": "test (cleaned rf_skyvision)"},
+  "crackseg_ultralytics": {"path": "data/crackSegUltralytics", "role": "pretrain (generic crack seg)"},
+  "agdd": {"path": "data/agdd_aircraft_glass/data", "role": "held-out test (aircraft glass, OBB labels)"},
+  "rf_spman": {"path": "data/rf_spman", "role": "raw Roboflow, feeds extras/broken_pane"},
+  "rf_tongji": {"path": "data/rf_tongji", "role": "raw Roboflow, feeds extras/broken_pane"}
+}

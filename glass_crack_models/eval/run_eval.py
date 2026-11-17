@@ -41,7 +41,7 @@ from glass_crack_models.eval.regions import Region, extract_regions, region_from
 from glass_crack_models.infer.predictors import load_predictor
 from glass_crack_models.infer.tiling import predict_tiled
 from glass_crack_models.protocol import (BOOTSTRAP_RESAMPLES, LINEAR_SOURCE_IDS, NEGATIVE_DEFECT_IDS, OPERATING_POINT_RULE,
-                                         THRESHOLD_GRID)
+                                         THRESHOLD_GRID, spread)
 from glass_crack_models.viz.overlay import caption, grid, pred_overlay, read_rgb, save_rgb
 
 CLS = "linear_defect"
@@ -49,12 +49,6 @@ CRACK_ID = 1  # in glass_merged_seg class space
 
 
 # ---- data ---------------------------------------------------------------------------------------
-
-def spread(items: list, limit: int | None) -> list:
-    """`limit` items evenly spaced over a sorted list (sorted order clusters by source dataset)."""
-    if not limit or limit >= len(items):
-        return items
-    return [items[int(i * len(items) / limit)] for i in range(limit)]
 
 
 def load_seg_split(split_dir: Path, groups: dict[str, str] | None = None, limit: int | None = None) -> list[dict]:
