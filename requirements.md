@@ -44,11 +44,7 @@ Use the **PyTorch Notebook** image; its CUDA `torch`/`torchvision` are kept. `sc
 bash ~/glass_crack/cracked/scripts/tide/setup.sh
 ```
 
-```sh
-uv pip install --python .venv/bin/python "rfdetr[train]==1.12.1"
-```
-
-(On TIDE, use the JupyterHub venv instead: `~/glass_crack/venv/bin/pip install -q "rfdetr[train]==1.12.1"`.)
+Track C (`rfdetr[train]==1.12.1`) is included in the `PINS` installed by `setup.sh`; no separate pip step is needed on TIDE after setup.
 
 ## What each package is for
 
