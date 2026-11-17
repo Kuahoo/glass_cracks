@@ -8,13 +8,15 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 mkdir -p "$GC_ROOT" "$OUT_ROOT" "$TORCH_HOME" "$HF_HOME" "$YOLO_CONFIG_DIR"
 
-# transformers<=5.14.x needs torch>=2.4 (TIDE PyTorch Notebook = 2.4.0+cu121).
-# transformers>=5.15 needs torch>=2.5 and will disable PyTorch on TIDE, breaking RF-DETR imports.
-PINS=(ultralytics==8.4.177 segmentation-models-pytorch==0.5.0 timm==1.0.30 transformers==5.14.1
-      albumentations==2.0.8 pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0
-      'rfdetr[train]==1.12.1')
-STAMP="$VENV/.pins"
+# TIDE PyTorch Notebook ships torch 2.4.0+cu121.
+# transformers>=5.15 requires torch>=2.5 and prints "Disabling PyTorch because PyTorch >= 2.5",
+# which breaks RF-DETR (BackboneConfigMixin). Stay on 5.14.1 and force it AFTER rfdetr so deps
+# cannot silently upgrade back to 5.19.
 TRANSFORMERS_PIN=transformers==5.14.1
+PINS=(ultralytics==8.4.177 segmentation-models-pytorch==0.5.0 timm==1.0.30
+      albumentations==2.0.8 pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0
+      'rfdetr[train]==1.12.1' "$TRANSFORMERS_PIN")
+STAMP="$VENV/.pins"
 
 if [ ! -x "$PY" ]; then
     echo "== creating venv $VENV (inherits the image's torch)"
@@ -24,13 +26,17 @@ if [ ! -f "$STAMP" ] || [ "$(cat "$STAMP")" != "${PINS[*]}" ]; then
     echo "== installing pinned packages"
     "$PY" -m pip install -q --upgrade pip
     "$PY" -m pip install -q "${PINS[@]}"
+    # Last: pin wins over anything rfdetr/peft pulled (e.g. transformers 5.19).
+    echo "== forcing $TRANSFORMERS_PIN (TIDE torch 2.4)"
+    "$PY" -m pip install -q --force-reinstall --no-deps "$TRANSFORMERS_PIN"
     echo "${PINS[*]}" > "$STAMP"
 fi
-# RF-DETR 1.12 needs transformers>=5.1 (BackboneConfigMixin) with a working torch backend.
+# RF-DETR needs transformers 5.1–5.14 on this image, with a live torch backend.
 STAMP="$STAMP" PY="$PY" TRANSFORMERS_PIN="$TRANSFORMERS_PIN" "$PY" - <<'EOF'
 import importlib.metadata as md
 import os
 import torch
+from packaging.version import Version
 from transformers.utils import is_torch_available
 
 def ver(pkg):
@@ -46,18 +52,30 @@ print(f"transformers {tr}  rfdetr {ver('rfdetr')}  transformers_torch={is_torch_
 if not torch.cuda.is_available():
     print("WARNING: torch sees no GPU. Request a GPU on the spawn page (PyTorch Notebook image).")
 stamp, py, pin = os.environ["STAMP"], os.environ["PY"], os.environ["TRANSFORMERS_PIN"]
+want = pin.split("==", 1)[-1]
+if tr != want:
+    raise SystemExit(
+        f"ERROR: transformers is {tr}, expected {want}. "
+        f"'PyTorch >= 2.5' in the log means 5.19 is still installed.\n"
+        f"  Fix:\n"
+        f"    git -C ~/glass_crack/cracked pull --ff-only\n"
+        f"    grep TRANSFORMERS_PIN ~/glass_crack/cracked/scripts/tide/setup.sh\n"
+        f"    {py} -m pip install --force-reinstall --no-deps '{pin}'\n"
+        f"    rm -f {stamp} && bash ~/glass_crack/cracked/scripts/tide/setup.sh"
+    )
+if Version(tr) >= Version("5.15"):
+    raise SystemExit(f"ERROR: transformers {tr} needs torch>=2.5; TIDE has {torch.__version__}.")
 if not is_torch_available():
     raise SystemExit(
-        f"ERROR: transformers {tr} disabled PyTorch (image has {torch.__version__}; "
-        f"transformers>=5.15 needs torch>=2.5).\n"
-        f"  Fix: {py} -m pip install -U '{pin}' && rm -f {stamp} && bash scripts/tide/setup.sh"
+        f"ERROR: transformers {tr} disabled PyTorch (torch {torch.__version__}).\n"
+        f"  Fix: {py} -m pip install --force-reinstall --no-deps '{pin}' && rm -f {stamp}"
     )
 try:
     from transformers import BackboneConfigMixin  # noqa: F401
 except ImportError as e:
     raise SystemExit(
-        f"ERROR: transformers {tr} cannot import BackboneConfigMixin (need >=5.1,<5.15 on TIDE).\n"
-        f"  Fix: {py} -m pip install -U '{pin}' && rm -f {stamp} && bash scripts/tide/setup.sh\n"
+        f"ERROR: cannot import BackboneConfigMixin from transformers {tr}.\n"
+        f"  Fix: {py} -m pip install --force-reinstall --no-deps '{pin}' && rm -f {stamp}\n"
         f"  Underlying: {e}"
     ) from e
 EOF
