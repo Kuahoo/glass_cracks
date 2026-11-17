@@ -14,7 +14,7 @@ uv pip install --python .venv/bin/python \
 uv pip install --python .venv/bin/python \
   ultralytics==8.4.177 \
   segmentation-models-pytorch==0.5.0 timm==1.0.30 \
-  transformers==5.19.0 \
+  transformers==5.14.1 \
   albumentations==2.0.8 \
   opencv-python==5.0.0.93 \
   pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0 scipy==1.18.1 \
@@ -24,13 +24,13 @@ uv pip install --python .venv/bin/python \
 
 ## Google Colab (GPU)
 
-Colab already ships a CUDA build of `torch`/`torchvision`; do not reinstall them. Record the preinstalled versions in each run's log instead.
+Colab already ships a CUDA build of `torch`/`torchvision`; do not reinstall them. Record the preinstalled versions in each run's log instead. Prefer `transformers==5.14.1` unless Colab torch is ≥2.6 (then 5.19 is fine).
 
 ```sh
 pip install -q \
   ultralytics==8.4.177 \
   segmentation-models-pytorch==0.5.0 timm==1.0.30 \
-  transformers==5.19.0 \
+  transformers==5.14.1 \
   albumentations==2.0.8 \
   pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0 \
   "rfdetr[train]==1.12.1"
@@ -38,22 +38,25 @@ pip install -q \
 
 ## SDSU TIDE JupyterHub (GPU)
 
-Use the **PyTorch Notebook** image (ships `torch 2.4.0+cu121`). `scripts/tide/setup.sh` creates `~/glass_crack/venv` with `--system-site-packages`, then **upgrades torch in the venv** to `2.5.1+cu121` + `torchvision 0.20.1+cu121` so RF-DETR / `transformers` 5.19 work (need torch≥2.5 for DTensor). Needs ~2 GB free under `$HOME`.
+Use the **PyTorch Notebook** image (ships `torch 2.4.0+cu121`). `scripts/tide/setup.sh` creates `~/glass_crack/venv` with `--system-site-packages`, then installs into the venv:
+
+- `torch==2.5.1+cu121`, `torchvision==0.20.1+cu121`, `torchaudio==2.5.1+cu121`
+- `transformers==5.14.1`, `rfdetr[train]==1.12.1`
+
+**Why not transformers 5.19?** It needs `torch.accelerator` → **torch ≥2.6** (cu124+ wheels). On cu121 we stay at 2.5.1 + 5.14.1 (verified: `AutoBackbone` + `import rfdetr` OK). Needs ~2 GB free under `$HOME`.
 
 ```sh
 bash ~/glass_crack/cracked/scripts/tide/setup.sh
 ```
 
-Track C pins (`torch 2.5.1+cu121`, `transformers==5.19.0`, `rfdetr[train]==1.12.1`) are installed by `setup.sh`.
-
 ## What each package is for
 
 | Package | Used for |
 |---|---|
-| `torch`, `torchvision` | Training and inference |
+| `torch`, `torchvision`, `torchaudio` | Training and inference (TIDE venv: **2.5.1+cu121**) |
 | `ultralytics` | Track A: YOLO-seg training, validation, `data.yaml` loading |
 | `segmentation-models-pytorch`, `timm` | Track B: U-Net (ResNet34 / EfficientNet encoders) and SegFormer (`mit_b2`) |
-| `transformers` | SegFormer + Track C DINOv2 backbone. Pin **`5.19.0`** (needs torch≥2.5; TIDE venv upgrades torch). |
+| `transformers` | SegFormer + Track C DINOv2. Pin **`5.14.1`** with torch 2.5; use 5.19 only if torch≥2.6 |
 | `rfdetr[train]` | Track C: RF-DETR-Seg training + inference (`transformers>=5.1,<6`) |
 | `albumentations` | Track B augmentation; Phase 4 scale/blur/compression augmentation |
 | `opencv-python` | Polygon rasterization, connected components, overlays, tiling |

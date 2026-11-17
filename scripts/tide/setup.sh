@@ -9,15 +9,18 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 mkdir -p "$GC_ROOT" "$OUT_ROOT" "$TORCH_HOME" "$HF_HOME" "$YOLO_CONFIG_DIR"
 
-# Image default is torch 2.4.0+cu121. RF-DETR + transformers need torch>=2.5 (DTensor API) and
-# transformers>=5.1 (BackboneConfigMixin). Install CUDA 12.1 wheels into the venv.
+# Image default is torch 2.4.0+cu121. Track C needs:
+#   - torch>=2.5 for DTensor (used by transformers>=5.14)
+#   - transformers>=5.1 for BackboneConfigMixin / AutoBackbone (rfdetr)
+# transformers 5.19 needs torch.accelerator → torch>=2.6 (cu124+). Stay on cu121 torch 2.5.1
+# + transformers 5.14.1 (verified: AutoBackbone + rfdetr import OK).
 TORCH_INDEX=https://download.pytorch.org/whl/cu121
-TORCH_PINS=(torch==2.5.1+cu121 torchvision==0.20.1+cu121)
-PINS=(ultralytics==8.4.177 segmentation-models-pytorch==0.5.0 timm==1.0.30 transformers==5.19.0
+TORCH_PINS=(torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121)
+TRANSFORMERS_PIN=transformers==5.14.1
+PINS=(ultralytics==8.4.177 segmentation-models-pytorch==0.5.0 timm==1.0.30 "$TRANSFORMERS_PIN"
       albumentations==2.0.8 pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0
       'rfdetr[train]==1.12.1')
 STAMP="$VENV/.pins"
-# Stamp covers both torch and package pins so a torch bump re-runs install.
 STAMP_BODY="${TORCH_PINS[*]} | ${PINS[*]}"
 
 if [ ! -x "$PY" ]; then
@@ -28,13 +31,14 @@ if [ ! -f "$STAMP" ] || [ "$(cat "$STAMP")" != "$STAMP_BODY" ]; then
     echo "== installing ${TORCH_PINS[*]} from $TORCH_INDEX (~2 GB; needs free home space)"
     "$PY" -m pip install -q --upgrade pip
     "$PY" -m pip install -q --index-url "$TORCH_INDEX" "${TORCH_PINS[@]}"
-    echo "== installing pinned packages (transformers 5.19 + rfdetr; needs the venv torch above)"
+    echo "== installing pinned packages ($TRANSFORMERS_PIN + rfdetr)"
     "$PY" -m pip install -q "${PINS[@]}"
-    # If a dep pulled a non-cu121 torch from PyPI, put the CUDA pin back.
+    # Keep CUDA torch if a PyPI dep tried to replace it; keep transformers pin if rfdetr upgraded it.
     if ! "$PY" -c "import torch; v=torch.__version__; raise SystemExit(0 if v.startswith('2.5.1') and 'cu121' in v else 1)"; then
-        echo "== re-applying ${TORCH_PINS[*]} (PINS install replaced CUDA torch)"
+        echo "== re-applying ${TORCH_PINS[*]}"
         "$PY" -m pip install -q --index-url "$TORCH_INDEX" "${TORCH_PINS[@]}"
     fi
+    "$PY" -m pip install -q --force-reinstall --no-deps "$TRANSFORMERS_PIN"
     echo "$STAMP_BODY" > "$STAMP"
 fi
 
@@ -50,33 +54,48 @@ def ver(pkg):
     except md.PackageNotFoundError:
         return "missing"
 
-tv = torch.__version__
+def causes(err):
+    lines = [f"{type(err).__name__}: {err}"]
+    c = err.__cause__ or getattr(err, "__context__", None)
+    n = 0
+    while c is not None and n < 6:
+        lines.append(f"  caused by {type(c).__name__}: {c}")
+        c = c.__cause__ or getattr(c, "__context__", None)
+        n += 1
+    return "\n".join(lines)
+
+tv, tr = torch.__version__, ver("transformers")
 print(f"torch {tv}  cuda {getattr(torch.version, 'cuda', None)}  "
       f"gpu {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none'}")
 print(f"torch file: {torch.__file__}")
-print(f"transformers {ver('transformers')}  rfdetr {ver('rfdetr')}")
+print(f"transformers {tr}  rfdetr {ver('rfdetr')}  torchaudio {ver('torchaudio')}")
 if not torch.cuda.is_available():
     print("WARNING: torch sees no GPU. Request a GPU on the spawn page (PyTorch Notebook image).")
 if "/opt/conda/" in (torch.__file__ or "") or Version(tv.split("+")[0]) < Version("2.5"):
     raise SystemExit(
-        f"ERROR: need venv torch>=2.5.1+cu121 for RF-DETR/transformers; got {tv} from {torch.__file__}.\n"
+        f"ERROR: need venv torch 2.5.1+cu121; got {tv} from {torch.__file__}.\n"
         f"  Fix: rm -f ~/glass_crack/venv/.pins && bash ~/glass_crack/cracked/scripts/tide/setup.sh"
+    )
+if not tr.startswith("5.14."):
+    raise SystemExit(
+        f"ERROR: need transformers 5.14.x on torch 2.5 (5.19 needs torch>=2.6 / torch.accelerator); got {tr}.\n"
+        f"  Fix: pip install --force-reinstall --no-deps 'transformers==5.14.1' && rm -f ~/glass_crack/venv/.pins"
     )
 try:
     from torch.distributed.tensor import DTensor  # noqa: F401
 except ImportError as e:
-    raise SystemExit(f"ERROR: torch {tv} missing DTensor ({e}). Reinstall torch 2.5.1+cu121 into the venv.") from e
+    raise SystemExit(f"ERROR: torch {tv} missing DTensor:\n{causes(e)}") from e
 try:
     from transformers.utils import is_torch_available
-    from transformers import BackboneConfigMixin  # noqa: F401
+    from transformers import AutoBackbone, BackboneConfigMixin  # noqa: F401
     assert is_torch_available(), "transformers disabled PyTorch"
 except Exception as e:
-    raise SystemExit(f"ERROR: transformers import failed: {e}") from e
+    raise SystemExit(f"ERROR: transformers import failed:\n{causes(e)}") from e
 try:
     import rfdetr  # noqa: F401
 except Exception as e:
-    raise SystemExit(f"ERROR: import rfdetr failed: {e}") from e
-print("Track C imports OK (torch DTensor, BackboneConfigMixin, rfdetr)")
+    raise SystemExit(f"ERROR: import rfdetr failed:\n{causes(e)}") from e
+print("Track C imports OK (torch 2.5.1, transformers 5.14, AutoBackbone, rfdetr)")
 EOF
 
 # Validate a zip (an upload cut short or a saved Drive page is not one), then extract it into $DATA_ROOT.
