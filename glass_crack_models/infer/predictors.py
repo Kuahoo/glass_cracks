@@ -157,7 +157,7 @@ class RfDetrPredictor:
         self.device = torch_device(device)
         self.conf = conf
         # trust_checkpoint: local training artifacts we produced
-        self.model = RFDETR.from_checkpoint(self.checkpoint, trust_checkpoint=True)
+        self.model = RFDETR.from_checkpoint(self.checkpoint, trust_checkpoint=True, device=self.device)
         names = getattr(self.model, "class_names", None) or getattr(self.model, "names", None)
         if names is None:
             raise RuntimeError(f"RF-DETR checkpoint missing class names: {self.checkpoint}")
