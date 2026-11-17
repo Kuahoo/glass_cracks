@@ -25,8 +25,8 @@ Do not invent a parallel metrics path. Train with RF-DETR’s API; adapt outputs
 
 ## Model choice
 
-- **Default:** `RFDETRSegMedium` (instance segmentation).
-- Config key `variant` may select Nano / Small / Large later without a new trainer.
+- **Default:** `RFDETRSegLarge` (instance segmentation). TIDE target hardware is 1× NVIDIA L40 (~48 GB VRAM), 8 CPU, 32 GB RAM — Large is the starting point for the architecture compare, not Medium.
+- Config key `variant` may select Nano / Small / Medium later for speed ablations without a new trainer.
 - License: Apache-2.0 (RF-DETR-Seg family). Prefer pinning an exact `rfdetr` version in `requirements.md`.
 
 ## Data
@@ -39,7 +39,7 @@ Do not invent a parallel metrics path. Train with RF-DETR’s API; adapt outputs
 
 - CLI mirror of other trainers: `--config`, `--seed`, `--device`, `--smoke`, `--epochs`, `--fresh`, `--no-eval`, `--workers`, `--compute-units`.
 - Resolve dataset dir from config (`dataset` / optional `data` yaml parent).
-- Call `RFDETRSegMedium().train(dataset_dir=..., output_dir=run_dir, epochs=..., ...)` with batch settings suitable for TIDE L40 (document defaults in config; allow override).
+- Call `RFDETRSegLarge().train(dataset_dir=..., output_dir=run_dir, epochs=..., ...)` with batch settings suitable for TIDE L40 (document defaults in config; allow override). Start conservative (`batch_size` 2–4 + `grad_accum_steps` to keep effective batch ~16); raise batch if VRAM allows.
 - Run dir: `OUT_ROOT/runs/E7_s{seed}/` (or `{exp_id}_s{seed}`).
 - Preferred eval checkpoint: `checkpoint_best_total.pth` (fallback: `checkpoint_best_ema.pth` / `checkpoint_best_regular.pth`).
 - Resume: use package support if present; otherwise document `--fresh` for v1.
@@ -50,15 +50,16 @@ Do not invent a parallel metrics path. Train with RF-DETR’s API; adapt outputs
 ```yaml
 exp_id: E7
 track: C
-variant: medium          # maps to RFDETRSegMedium
+variant: large           # maps to RFDETRSegLarge (L40 default)
 dataset: merged
 weighting: balanced
 epochs: 50               # DETR-style; shorter than YOLO 150 — tune after smoke
-batch_size: 4
-grad_accum_steps: 4
+batch_size: 2            # Large on L40; raise if memory headroom
+grad_accum_steps: 8      # effective batch ~16
 lr: 1.0e-4
 seed: 0
-notes: "Track C RF-DETR-Seg vs E1/E3"
+workers: 8               # match TIDE 8 CPU
+notes: "Track C RF-DETR-Seg Large vs E1/E3"
 ```
 
 Smoke: 1 epoch, tiny subset or RF-DETR’s minimal path, `imgsz`/resolution left to package defaults unless we must set `resolution=`.
@@ -101,7 +102,7 @@ Smoke: 1 epoch, tiny subset or RF-DETR’s minimal path, `imgsz`/resolution left
 | SegFormer (`mit_b2`) via Track B | Already supported by `train_semseg` arch/encoder | After E3 3-seed table |
 | YOLO size sweep (`n`/`m` vs `s`) | Cheap Track A sensitivity | Optional ablation |
 | LoRA-SAM / CrackSAM-style | Domain shift / thin cracks | Only if proxies + RF-DETR still miss curtain-wall |
-| RF-DETR-Seg Nano/Large | Accuracy–latency knobs | After Medium baseline |
+| RF-DETR-Seg Nano/Small/Medium | Speed / VRAM ablations vs Large | After Large baseline |
 
 ## Risks and mitigations
 
@@ -109,7 +110,7 @@ Smoke: 1 epoch, tiny subset or RF-DETR’s minimal path, `imgsz`/resolution left
 |---|---|
 | `rfdetr` API / checkpoint layout drift | Pin version; smoke test; prefer `from_checkpoint` |
 | YOLO-seg folder not auto-detected | Smoke on real `glass_merged_seg`; COCO export fallback only if needed |
-| VRAM on L40 | Default batch 4 × accum 4; document OOM knobs |
+| VRAM on L40 with Large | Default batch 2 × accum 8; bump batch if free memory; document OOM knobs |
 | Checkpoint routing vs Track B `.pth` | `experiment.json` track marker + filename heuristics |
 | Early RF-DETR results look weak | Report honestly under same protocol; don’t change matching |
 
