@@ -8,10 +8,13 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 mkdir -p "$GC_ROOT" "$OUT_ROOT" "$TORCH_HOME" "$HF_HOME" "$YOLO_CONFIG_DIR"
 
-PINS=(ultralytics==8.4.177 segmentation-models-pytorch==0.5.0 timm==1.0.30 transformers==5.19.0
+# transformers<=5.14.x needs torch>=2.4 (TIDE PyTorch Notebook = 2.4.0+cu121).
+# transformers>=5.15 needs torch>=2.5 and will disable PyTorch on TIDE, breaking RF-DETR imports.
+PINS=(ultralytics==8.4.177 segmentation-models-pytorch==0.5.0 timm==1.0.30 transformers==5.14.1
       albumentations==2.0.8 pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0
       'rfdetr[train]==1.12.1')
 STAMP="$VENV/.pins"
+TRANSFORMERS_PIN=transformers==5.14.1
 
 if [ ! -x "$PY" ]; then
     echo "== creating venv $VENV (inherits the image's torch)"
@@ -23,12 +26,12 @@ if [ ! -f "$STAMP" ] || [ "$(cat "$STAMP")" != "${PINS[*]}" ]; then
     "$PY" -m pip install -q "${PINS[@]}"
     echo "${PINS[*]}" > "$STAMP"
 fi
-# RF-DETR 1.12 needs transformers>=5.1 (BackboneConfigMixin). A stale venv can keep 4.x even when the
-# pin string looks right (manual pip / partial installs). Fail setup loudly instead of at E7 import.
-STAMP="$STAMP" PY="$PY" "$PY" - <<'EOF'
+# RF-DETR 1.12 needs transformers>=5.1 (BackboneConfigMixin) with a working torch backend.
+STAMP="$STAMP" PY="$PY" TRANSFORMERS_PIN="$TRANSFORMERS_PIN" "$PY" - <<'EOF'
 import importlib.metadata as md
 import os
 import torch
+from transformers.utils import is_torch_available
 
 def ver(pkg):
     try:
@@ -39,17 +42,22 @@ def ver(pkg):
 tr = ver("transformers")
 print(f"torch {torch.__version__}  cuda {getattr(torch.version, 'cuda', None)}  "
       f"gpu {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none'}")
-print(f"transformers {tr}  rfdetr {ver('rfdetr')}")
+print(f"transformers {tr}  rfdetr {ver('rfdetr')}  transformers_torch={is_torch_available()}")
 if not torch.cuda.is_available():
     print("WARNING: torch sees no GPU. Request a GPU on the spawn page (PyTorch Notebook image).")
+stamp, py, pin = os.environ["STAMP"], os.environ["PY"], os.environ["TRANSFORMERS_PIN"]
+if not is_torch_available():
+    raise SystemExit(
+        f"ERROR: transformers {tr} disabled PyTorch (image has {torch.__version__}; "
+        f"transformers>=5.15 needs torch>=2.5).\n"
+        f"  Fix: {py} -m pip install -U '{pin}' && rm -f {stamp} && bash scripts/tide/setup.sh"
+    )
 try:
     from transformers import BackboneConfigMixin  # noqa: F401
 except ImportError as e:
-    stamp, py = os.environ["STAMP"], os.environ["PY"]
     raise SystemExit(
-        f"ERROR: transformers {tr} cannot import BackboneConfigMixin (need >=5.1 for rfdetr).\n"
-        f"  Fix: rm -f {stamp} && bash scripts/tide/setup.sh\n"
-        f"  Or:  {py} -m pip install -U 'transformers==5.19.0'\n"
+        f"ERROR: transformers {tr} cannot import BackboneConfigMixin (need >=5.1,<5.15 on TIDE).\n"
+        f"  Fix: {py} -m pip install -U '{pin}' && rm -f {stamp} && bash scripts/tide/setup.sh\n"
         f"  Underlying: {e}"
     ) from e
 EOF
