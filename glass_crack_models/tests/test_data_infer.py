@@ -133,6 +133,19 @@ class SemsegModelTests(unittest.TestCase):
             with torch.no_grad():
                 self.assertEqual(tuple(m(torch.zeros(1, 3, 64, 64)).shape), (1, 1, 64, 64))
 
+    def test_resume_rng_coerces_to_cpu_uint8(self):
+        import torch
+        from glass_crack_models.train.train_semseg import _cpu_byte_rng, restore_rng
+        raw = torch.get_rng_state()
+        # Simulate a bad resume tensor (wrong dtype / non-contiguous) that used to crash set_rng_state.
+        bad = raw.to(dtype=torch.int64).clone()
+        fixed = _cpu_byte_rng(bad)
+        self.assertEqual(fixed.dtype, torch.uint8)
+        self.assertEqual(fixed.device.type, "cpu")
+        g = torch.Generator()
+        restore_rng(bad, g, g.get_state().to(dtype=torch.int64))
+        torch.set_rng_state(fixed)  # must not raise
+
 
 if __name__ == "__main__":
     unittest.main()

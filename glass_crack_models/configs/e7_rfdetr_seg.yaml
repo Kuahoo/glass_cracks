@@ -1,0 +1,13 @@
+# E7 (Track C): RF-DETR-Seg Large on the 4-class glass core. Compare with E1 / E3 under run_eval.
+exp_id: E7
+track: C
+variant: large
+dataset: merged
+weighting: balanced
+epochs: 50
+batch_size: 2
+grad_accum_steps: 8
+lr: 1.0e-4
+seed: 0
+workers: 8
+notes: "Track C RF-DETR-Seg Large vs E1/E3"

@@ -27,7 +27,7 @@ from shapely.geometry import Polygon, box
 from shapely.validation import make_valid
 
 from glass_crack_models import paths
-from glass_crack_models.data.rasterize import read_yolo
+from glass_crack_models.data.rasterize import label_path_for, read_yolo
 from glass_crack_models.infer.tiling import tile_starts
 from glass_crack_models.protocol import MIN_REGION_PX
 
@@ -55,7 +55,7 @@ def tile_image(job):
     t0 = time.time()
     img = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
     h, w = img.shape[:2]
-    lbl = img_path.parent.parent / "labels" / (img_path.stem + ".txt")
+    lbl = label_path_for(img_path)
     polys = []
     for c, p in read_yolo(lbl):
         if c != CRACK_ID or len(p) < 3:

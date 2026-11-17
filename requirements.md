@@ -32,7 +32,8 @@ pip install -q \
   segmentation-models-pytorch==0.5.0 timm==1.0.30 \
   transformers==5.19.0 \
   albumentations==2.0.8 \
-  pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0
+  pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0 \
+  "rfdetr[train]==1.12.1"
 ```
 
 ## SDSU TIDE JupyterHub (GPU)
@@ -43,6 +44,8 @@ Use the **PyTorch Notebook** image; its CUDA `torch`/`torchvision` are kept. `sc
 bash ~/glass_crack/cracked/scripts/tide/setup.sh
 ```
 
+Track C (`rfdetr[train]==1.12.1`) is included in the `PINS` installed by `setup.sh`; no separate pip step is needed on TIDE after setup.
+
 ## What each package is for
 
 | Package | Used for |
@@ -51,6 +54,7 @@ bash ~/glass_crack/cracked/scripts/tide/setup.sh
 | `ultralytics` | Track A: YOLO-seg training, validation, `data.yaml` loading |
 | `segmentation-models-pytorch`, `timm` | Track B: U-Net (ResNet34 / EfficientNet encoders) and SegFormer (`mit_b2`) |
 | `transformers` | Alternative SegFormer implementation and weights |
+| `rfdetr[train]` | Track C: RF-DETR-Seg training + inference |
 | `albumentations` | Track B augmentation; Phase 4 scale/blur/compression augmentation |
 | `opencv-python` | Polygon rasterization, connected components, overlays, tiling |
 | `pycocotools` | Mask RLE encoding and COCO-style mask IoU in the evaluator |

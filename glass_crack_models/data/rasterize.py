@@ -35,10 +35,6 @@ def polygon_to_mask(poly: np.ndarray, h: int, w: int) -> np.ndarray:
     return m.astype(bool)
 
 
-def instance_masks(labels, h: int, w: int, classes: set[int] | None = None) -> list[np.ndarray]:
-    return [polygon_to_mask(p, h, w) for c, p in labels if classes is None or c in classes]
-
-
 def semantic_mask(labels, h: int, w: int, classes: set[int] | None = None) -> np.ndarray:
     m = np.zeros((h, w), np.uint8)
     for c, p in labels:

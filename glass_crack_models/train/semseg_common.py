@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from glass_crack_models.data.rasterize import read_yolo, semantic_mask
+from glass_crack_models.data.rasterize import label_path_for, read_yolo, semantic_mask
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], np.float32)
@@ -55,7 +55,7 @@ class SegDataset(torch.utils.data.Dataset):
         p = self.images[i]
         img = cv2.cvtColor(cv2.imread(str(p), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
         h, w = img.shape[:2]
-        mask = semantic_mask(read_yolo(p.parent.parent / "labels" / (p.stem + ".txt")), h, w, self.classes).astype(np.uint8)
+        mask = semantic_mask(read_yolo(label_path_for(p)), h, w, self.classes).astype(np.uint8)
         if self.augment is not None:
             out = self.augment(image=img, mask=mask)
             img, mask = out["image"], out["mask"]

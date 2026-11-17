@@ -11,8 +11,6 @@ from skimage.morphology import skeletonize
 from glass_crack_models.eval.match import match
 from glass_crack_models.eval.regions import Region, extract_regions, union_mask
 
-SLICES = ("linear", "unannotated", "negdefect")  # has linear GT / no annotations / bubble-inclusion only
-
 
 def image_record(score_map: np.ndarray, gts: list[Region], thr: float, slice_tag: str,
                  cldice: bool = True, preds: list[Region] | None = None, crack_label: int | None = None) -> dict:

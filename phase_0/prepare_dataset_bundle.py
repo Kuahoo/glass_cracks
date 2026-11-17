@@ -52,7 +52,7 @@ import numpy as np
 from tqdm import tqdm
 
 IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
-BUNDLE_ENTRIES = {"images", "labels", "staged", "data.yaml", "summary_report.json", "manifest.csv"}
+BUNDLE_ENTRIES = {"images", "labels", "data.yaml", "summary_report.json", "manifest.csv"}
 DATASET_KEYS = ("gdd2", "ssgd", "agdd", "cardd", "ucrack", "cs9k", "neg_cubit", "neg_gseg", "neg_fcd", "neg_cwall")
 
 Label = Tuple[int, List[float]]

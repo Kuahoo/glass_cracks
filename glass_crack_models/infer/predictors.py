@@ -7,6 +7,7 @@ model has a separate crack class.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import cv2
@@ -106,8 +107,96 @@ class SemsegPredictor:
         return out
 
 
+def score_maps_from_instances(
+    height: int,
+    width: int,
+    masks: np.ndarray,
+    confs: np.ndarray,
+    class_ids: np.ndarray,
+    class_names: list[str],
+) -> dict[str, np.ndarray]:
+    """Per evaluated class: max over instances of (confidence x mask)."""
+    sources = eval_class_sources(class_names)
+    maps = {c: np.zeros((height, width), np.float32) for c in sources}
+    if masks.size == 0:
+        return maps
+    if masks.shape[-2:] != (height, width):
+        masks = np.stack([cv2.resize(m.astype(np.float32), (width, height), interpolation=cv2.INTER_LINEAR) > 0.5
+                          for m in masks])
+    for name, ids in sources.items():
+        sel = np.isin(class_ids, ids)
+        if sel.any():
+            maps[name] = np.max(masks[sel].astype(np.float32) * confs[sel, None, None], axis=0).astype(np.float32)
+    return maps
+
+
+def prefer_rfdetr_checkpoint(run_dir: Path) -> Path:
+    for name in ("checkpoint_best_total.pth", "checkpoint_best_ema.pth", "checkpoint_best_regular.pth"):
+        p = Path(run_dir) / name
+        if p.exists():
+            return p
+    raise FileNotFoundError(f"no RF-DETR best checkpoint under {run_dir}")
+
+
+def _experiment_track(checkpoint: Path) -> str | None:
+    side = checkpoint.parent / "experiment.json"
+    if side.exists():
+        try:
+            return json.loads(side.read_text()).get("track")
+        except Exception:
+            return None
+    return None
+
+
+class RfDetrPredictor:
+    track = "C"
+
+    def __init__(self, checkpoint: str | Path, device: str | None = None, conf: float = 0.01):
+        from rfdetr import RFDETR
+        self.checkpoint = str(checkpoint)
+        self.device = torch_device(device)
+        self.conf = conf
+        # trust_checkpoint: local training artifacts we produced
+        self.model = RFDETR.from_checkpoint(self.checkpoint, trust_checkpoint=True, device=self.device)
+        names = getattr(self.model, "class_names", None) or getattr(self.model, "names", None)
+        if names is None:
+            raise RuntimeError(f"RF-DETR checkpoint missing class names: {self.checkpoint}")
+        if isinstance(names, dict):
+            # Sparse (e.g. COCO-style 1..N) ids: contiguous name list + id->index remap
+            keys = sorted(names)
+            self.class_names = [names[k] for k in keys]
+            self._id_remap = {int(k): i for i, k in enumerate(keys)}
+        else:
+            self.class_names = list(names)
+            self._id_remap = {i: i for i in range(len(self.class_names))}
+        self.sources = eval_class_sources(self.class_names)
+        self.eval_classes = list(self.sources)
+
+    def predict_batch(self, tiles: list[np.ndarray]) -> list[dict[str, np.ndarray]]:
+        out = []
+        for tile in tiles:
+            h, w = tile.shape[:2]
+            det = self.model.predict(tile, threshold=self.conf)
+            masks = getattr(det, "mask", None)
+            if masks is None or len(masks) == 0:
+                out.append({c: np.zeros((h, w), np.float32) for c in self.eval_classes})
+                continue
+            confs = np.asarray(det.confidence, dtype=np.float32)
+            raw_ids = np.asarray(det.class_id, dtype=np.int64)
+            # Unknown ids map to -1 so they match no evaluated class
+            class_ids = np.array([self._id_remap.get(int(c), -1) for c in raw_ids], dtype=np.int64)
+            out.append(score_maps_from_instances(h, w, np.asarray(masks), confs, class_ids, self.class_names))
+        return out
+
+
 def load_predictor(checkpoint: str | Path, device: str | None = None):
     p = Path(checkpoint)
+    # Track C first: RF-DETR checkpoints are also .pth, so check before the generic Track B route.
+    track = _experiment_track(p)
+    if track == "C" or (
+        track is None and (p.name.lower().startswith("checkpoint_best_") or "rfdetr" in p.name.lower())
+    ):
+        return RfDetrPredictor(p, device)
     if p.suffix == ".pth":
         return SemsegPredictor(p, device)
     return YoloPredictor(p, device)

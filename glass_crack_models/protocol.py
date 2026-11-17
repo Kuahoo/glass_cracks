@@ -1,6 +1,7 @@
-"""Evaluation protocol constants (model_implementation_plan.md, Sections 4 and 4a).
+"""Shared evaluation protocol: constants and primitives
+(model_implementation_plan.md, Sections 4 and 4a).
 
-These are fixed in advance and are not tuned per experiment.
+The constants are fixed in advance and are not tuned per experiment.
 """
 
 MERGED_NAMES = ["bubble", "crack", "inclusion", "scratch"]
@@ -32,3 +33,10 @@ AGDD_BOX_IOU = 0.3
 AGDD_STRICT_BOX_IOU = 0.5
 AGDD_HIT_FRACTION = 0.5  # share of predicted pixels inside the GT oriented box
 AGDD_VIEWS = ["images", "image"]
+
+
+def spread(items: list, limit: int | None) -> list:
+    """`limit` items evenly spaced over a sorted list (sorted order clusters by source dataset)."""
+    if not limit or limit >= len(items):
+        return items
+    return [items[int(i * len(items) / limit)] for i in range(limit)]

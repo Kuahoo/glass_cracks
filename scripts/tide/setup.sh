@@ -9,7 +9,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 mkdir -p "$GC_ROOT" "$OUT_ROOT" "$TORCH_HOME" "$HF_HOME" "$YOLO_CONFIG_DIR"
 
 PINS=(ultralytics==8.4.177 segmentation-models-pytorch==0.5.0 timm==1.0.30 transformers==5.19.0
-      albumentations==2.0.8 pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0)
+      albumentations==2.0.8 pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0
+      'rfdetr[train]==1.12.1')
 STAMP="$VENV/.pins"
 
 if [ ! -x "$PY" ]; then

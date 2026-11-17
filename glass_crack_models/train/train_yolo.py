@@ -26,6 +26,7 @@ import yaml
 
 from glass_crack_models import paths
 from glass_crack_models.config import load_config
+from glass_crack_models.protocol import spread
 
 DATASETS = {"linear": paths.linear_dir, "merged": paths.merged_dir}
 
@@ -33,6 +34,12 @@ DATASETS = {"linear": paths.linear_dir, "merged": paths.merged_dir}
 def data_yaml(cfg: dict, run_dir: Path) -> Path:
     if "data" in cfg:
         return paths.resolve(cfg["data"])
+    if "dataset" not in cfg:
+        hint = ("this looks like a Track B / U-Net config — use "
+                "`python -m glass_crack_models.train.train_semseg --config ...` instead"
+                if cfg.get("track") == "B" or "arch" in cfg else
+                "set `dataset: merged` or `dataset: linear`, or pass `data: <data.yaml>`")
+        raise KeyError(f"config missing 'dataset'; {hint}")
     ds = DATASETS[cfg["dataset"]]()
     y = ds / f"data_{cfg.get('weighting', 'balanced')}.yaml"
     if not y.exists():
@@ -68,7 +75,7 @@ def smoke_yaml(cfg: dict, run_dir: Path, n: int = 64) -> Path:
     """Evenly spaced train subset (sorted order puts the mostly bubble/inclusion GDD2 images first)."""
     ds = DATASETS[cfg["dataset"]]()
     imgs = sorted((ds / "train" / "images").iterdir())
-    pick = [imgs[int(i * len(imgs) / n)] for i in range(min(n, len(imgs)))]
+    pick = spread(imgs, min(n, len(imgs)))
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "smoke_train.txt").write_text("\n".join(str(p) for p in pick) + "\n")
     names = yaml.safe_load((ds / "data_all.yaml").read_text())["names"]
