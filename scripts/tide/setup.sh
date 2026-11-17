@@ -23,12 +23,35 @@ if [ ! -f "$STAMP" ] || [ "$(cat "$STAMP")" != "${PINS[*]}" ]; then
     "$PY" -m pip install -q "${PINS[@]}"
     echo "${PINS[*]}" > "$STAMP"
 fi
-"$PY" - <<'EOF'
+# RF-DETR 1.12 needs transformers>=5.1 (BackboneConfigMixin). A stale venv can keep 4.x even when the
+# pin string looks right (manual pip / partial installs). Fail setup loudly instead of at E7 import.
+STAMP="$STAMP" PY="$PY" "$PY" - <<'EOF'
+import importlib.metadata as md
+import os
 import torch
+
+def ver(pkg):
+    try:
+        return md.version(pkg)
+    except md.PackageNotFoundError:
+        return "missing"
+
+tr = ver("transformers")
+print(f"torch {torch.__version__}  cuda {getattr(torch.version, 'cuda', None)}  "
+      f"gpu {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none'}")
+print(f"transformers {tr}  rfdetr {ver('rfdetr')}")
 if not torch.cuda.is_available():
     print("WARNING: torch sees no GPU. Request a GPU on the spawn page (PyTorch Notebook image).")
-else:
-    print(f"torch {torch.__version__}  cuda {torch.version.cuda}  gpu {torch.cuda.get_device_name(0)}")
+try:
+    from transformers import BackboneConfigMixin  # noqa: F401
+except ImportError as e:
+    stamp, py = os.environ["STAMP"], os.environ["PY"]
+    raise SystemExit(
+        f"ERROR: transformers {tr} cannot import BackboneConfigMixin (need >=5.1 for rfdetr).\n"
+        f"  Fix: rm -f {stamp} && bash scripts/tide/setup.sh\n"
+        f"  Or:  {py} -m pip install -U 'transformers==5.19.0'\n"
+        f"  Underlying: {e}"
+    ) from e
 EOF
 
 # Validate a zip (an upload cut short or a saved Drive page is not one), then extract it into $DATA_ROOT.

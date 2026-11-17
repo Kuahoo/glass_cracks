@@ -53,8 +53,8 @@ Track C (`rfdetr[train]==1.12.1`) is included in the `PINS` installed by `setup.
 | `torch`, `torchvision` | Training and inference |
 | `ultralytics` | Track A: YOLO-seg training, validation, `data.yaml` loading |
 | `segmentation-models-pytorch`, `timm` | Track B: U-Net (ResNet34 / EfficientNet encoders) and SegFormer (`mit_b2`) |
-| `transformers` | Alternative SegFormer implementation and weights |
-| `rfdetr[train]` | Track C: RF-DETR-Seg training + inference |
+| `transformers` | SegFormer weights; **Track C needs `>=5.1`** (`BackboneConfigMixin`). Pin `5.19.0`. |
+| `rfdetr[train]` | Track C: RF-DETR-Seg training + inference (`transformers>=5.1,<6`) |
 | `albumentations` | Track B augmentation; Phase 4 scale/blur/compression augmentation |
 | `opencv-python` | Polygon rasterization, connected components, overlays, tiling |
 | `pycocotools` | Mask RLE encoding and COCO-style mask IoU in the evaluator |
