@@ -2,7 +2,7 @@
 
 Status as of 2026-11-05 (plan v4). Research use only; licensing and permissions are deferred on purpose.
 
-**Working approach:** Phase 1 (measurements, bug fixes) is done. The current work order is plan v4 (`agent_plan.md`, Section 4): M1 resolution ablation, M2 E4 augmentation, M3 hard negatives (E4b) and label audit (E8), M4 proxy pretraining (E5 CUBIT, E6 CarDD). Each step must beat E1 threshold-free before the next builds on it. Track B is kept for academic cross-architecture comparisons. See Section 9.
+**Working approach:** Phase 1 (measurements, bug fixes) is done. Plan v4 (`agent_plan.md`, Section 4): M1/E4/E4b/E5pre/E6pre are scored on TIDE (E4/E4b did **not** beat E1 threshold-free). Remaining: Track C RF-DETR (E7), E3_s1 eval, optional E5/E6 glass fine-tunes, E8 label audit. Each **YOLO** recipe must beat E1 before stacking. Tracks B/C are architecture compares. See Section 9 and `NEXT.md`.
 
 - **GitHub repo:** https://github.com/Kuahoo/glass_cracks (remote `origin`)
 - **Laptop workspace:** `/home/kuahoo/work/sdsu/2026_fall_sdsu/cracked`
@@ -13,11 +13,12 @@ Status as of 2026-11-05 (plan v4). Research use only; licensing and permissions 
 
 ## 1. Goal
 
-Segment visible cracks and scratches (merged into one `linear_defect` target) on architectural / curtain-wall glass, working with the elicc curtain glass company. Target deployment is drone imagery of facades. Two model tracks:
+Segment visible cracks and scratches (merged into one `linear_defect` target) on architectural / curtain-wall glass, working with the elicc curtain glass company. Target deployment is drone imagery of facades. Three model tracks:
 
 - **Track A:** YOLO-seg (`yolo26s-seg`, Ultralytics 8.4.177). E1 = 4 classes (bubble, crack, inclusion, scratch; scored as crack OR scratch). E2 = `linear_defect` only.
 - **Track B:** semantic segmentation (`segmentation-models-pytorch`, kept for academic comparisons against Track A). Config keys `arch` (unet, unetplusplus, fpn, deeplabv3plus, segformer, ...) and `encoder` (resnet34, resnet50, mit_b2, ...); defaults `unet` + `resnet34`. E3 = U-Net ResNet34, BCE + Dice (equal weight).
-- **Parked:** LoRA-adapted SAM (see Section 8).
+- **Track C:** RF-DETR-Seg (`e7_rfdetr_seg.yaml`, default Large). Trained via `train_rfdetr.py`; scored with the same `run_eval` protocol for architecture compare vs E1/E3.
+- **Parked:** LoRA-adapted SAM / SegFormer (see Section 8; former “Track C” ideas now sit behind RF-DETR).
 
 ---
 
@@ -37,7 +38,7 @@ Repo root `/home/kuahoo/work/sdsu/2026_fall_sdsu/cracked`:
 
 | Path | What it is |
 |---|---|
-| `glass_crack_models/` | Package: `paths.py`, `protocol.py`, `data/`, `train/` (`train_yolo.py` Track A, `train_semseg.py` Track B), `eval/` (`run_eval.py`, `match.py`, `metrics.py`, `agdd.py`, `bootstrap.py`, **`compare_runs.py`**, **`agdd_box_scores.py`**), `infer/`, `viz/`, `configs/` (`e1_yolo_4class`, `e2_yolo_linear`, `e3_unet_r34`, `e4_yolo_robust`, `e4b_yolo_hardneg`, `e5_pre_cubit`, `e5_yolo_cubit_ft`, `e6_pre_cardd`, `e6_yolo_cardd_ft`), `tests/` |
+| `glass_crack_models/` | Package: `paths.py`, `protocol.py`, `data/`, `train/` (`train_yolo.py` Track A, `train_semseg.py` Track B, `train_rfdetr.py` Track C), `eval/` (`run_eval.py`, `match.py`, `metrics.py`, `agdd.py`, `bootstrap.py`, **`compare_runs.py`**, **`agdd_box_scores.py`**), `infer/` (YOLO / U-Net / RF-DETR predictors), `viz/`, `configs/` (`e1`–`e6` + `e7_rfdetr_seg`), `tests/` |
 | `notebooks/` | `tide_setup.ipynb` (first-time TIDE setup, E1-E3 jobs), **`tide_v4.ipynb`** (current plan v4 session) |
 | `scripts/tide/` | `env.sh`, `setup.sh` (validates and unzips `bundle_colab.zip`, then optional `extras.zip`), `job.sh` |
 | `scripts/` | **`build_extras.sh`** (laptop: builds `data/extras/` + `data/extras.zip`), `profile_datasets.py` |
