@@ -26,7 +26,7 @@ Segment visible cracks and scratches (merged into one `linear_defect` target) on
 
 ### 2.1 Accounts and links
 - GitHub: https://github.com/Kuahoo/glass_cracks.
-- SDSU TIDE (JupyterHub): https://jupyterhub-research.sdsu.edu, image **PyTorch Notebook** (torch 2.4.0+cu121, Python 3.11), 1x NVIDIA L40, 8 CPU, 32 GB RAM. Free GPUs: https://nrp.ai/viz/resources/ (filter `rci-tide`). Docs: https://csu-tide.github.io/ (batch jobs: https://csu-tide.github.io/batch-jobs/).
+- SDSU TIDE (JupyterHub): https://jupyterhub-research.sdsu.edu, image **PyTorch Notebook** (image torch 2.4.0+cu121; `setup.sh` upgrades the project venv to **torch 2.5.1+cu121** for RF-DETR), Python 3.11, 1x NVIDIA L40, 8 CPU, 32 GB RAM. Free GPUs: https://nrp.ai/viz/resources/ (filter `rci-tide`). Docs: https://csu-tide.github.io/ (batch jobs: https://csu-tide.github.io/batch-jobs/).
   - Persistent storage is only `/home/jovyan` (75 GiB); pip/conda/apt in the default env revert on restart.
   - The server stops after **12 h with no browser connected**; background jobs survive closed tabs.
   - Kubernetes batch Jobs have no runtime limit and auto-restart (Pods 6 h, Deployments 2 weeks). Use later for CUBIT pretraining and long sweeps.

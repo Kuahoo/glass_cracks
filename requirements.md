@@ -14,7 +14,7 @@ uv pip install --python .venv/bin/python \
 uv pip install --python .venv/bin/python \
   ultralytics==8.4.177 \
   segmentation-models-pytorch==0.5.0 timm==1.0.30 \
-  transformers==5.14.1 \
+  transformers==5.19.0 \
   albumentations==2.0.8 \
   opencv-python==5.0.0.93 \
   pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0 scipy==1.18.1 \
@@ -30,7 +30,7 @@ Colab already ships a CUDA build of `torch`/`torchvision`; do not reinstall them
 pip install -q \
   ultralytics==8.4.177 \
   segmentation-models-pytorch==0.5.0 timm==1.0.30 \
-  transformers==5.14.1 \
+  transformers==5.19.0 \
   albumentations==2.0.8 \
   pycocotools==2.0.11 scikit-image==0.26.0 shapely==2.2.0 \
   "rfdetr[train]==1.12.1"
@@ -38,13 +38,13 @@ pip install -q \
 
 ## SDSU TIDE JupyterHub (GPU)
 
-Use the **PyTorch Notebook** image; its CUDA `torch`/`torchvision` are kept (`2.4.0+cu121`). `scripts/tide/setup.sh` creates `~/glass_crack/venv` with `--system-site-packages` and installs the pins below. **Do not install `transformers>=5.15`** on TIDE — those releases require `torch>=2.5` and disable PyTorch, which breaks RF-DETR (`BackboneConfigMixin`). Pin stays at `transformers==5.14.1`.
+Use the **PyTorch Notebook** image (ships `torch 2.4.0+cu121`). `scripts/tide/setup.sh` creates `~/glass_crack/venv` with `--system-site-packages`, then **upgrades torch in the venv** to `2.5.1+cu121` + `torchvision 0.20.1+cu121` so RF-DETR / `transformers` 5.19 work (need torch≥2.5 for DTensor). Needs ~2 GB free under `$HOME`.
 
 ```sh
 bash ~/glass_crack/cracked/scripts/tide/setup.sh
 ```
 
-Track C (`rfdetr[train]==1.12.1` + `transformers==5.14.1`) is included in `setup.sh` `PINS`.
+Track C pins (`torch 2.5.1+cu121`, `transformers==5.19.0`, `rfdetr[train]==1.12.1`) are installed by `setup.sh`.
 
 ## What each package is for
 
@@ -53,7 +53,7 @@ Track C (`rfdetr[train]==1.12.1` + `transformers==5.14.1`) is included in `setup
 | `torch`, `torchvision` | Training and inference |
 | `ultralytics` | Track A: YOLO-seg training, validation, `data.yaml` loading |
 | `segmentation-models-pytorch`, `timm` | Track B: U-Net (ResNet34 / EfficientNet encoders) and SegFormer (`mit_b2`) |
-| `transformers` | SegFormer + Track C DINOv2 backbone. Pin **`5.14.1`** on TIDE (torch 2.4); `>=5.15` needs torch 2.5. |
+| `transformers` | SegFormer + Track C DINOv2 backbone. Pin **`5.19.0`** (needs torch≥2.5; TIDE venv upgrades torch). |
 | `rfdetr[train]` | Track C: RF-DETR-Seg training + inference (`transformers>=5.1,<6`) |
 | `albumentations` | Track B augmentation; Phase 4 scale/blur/compression augmentation |
 | `opencv-python` | Polygon rasterization, connected components, overlays, tiling |
