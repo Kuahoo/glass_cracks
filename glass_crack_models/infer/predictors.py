@@ -162,9 +162,13 @@ class RfDetrPredictor:
         if names is None:
             raise RuntimeError(f"RF-DETR checkpoint missing class names: {self.checkpoint}")
         if isinstance(names, dict):
-            self.class_names = [names[i] for i in sorted(names)]
+            # Sparse (e.g. COCO-style 1..N) ids: contiguous name list + id->index remap
+            keys = sorted(names)
+            self.class_names = [names[k] for k in keys]
+            self._id_remap = {int(k): i for i, k in enumerate(keys)}
         else:
             self.class_names = list(names)
+            self._id_remap = {i: i for i in range(len(self.class_names))}
         self.sources = eval_class_sources(self.class_names)
         self.eval_classes = list(self.sources)
 
@@ -178,7 +182,9 @@ class RfDetrPredictor:
                 out.append({c: np.zeros((h, w), np.float32) for c in self.eval_classes})
                 continue
             confs = np.asarray(det.confidence, dtype=np.float32)
-            class_ids = np.asarray(det.class_id, dtype=np.int64)
+            raw_ids = np.asarray(det.class_id, dtype=np.int64)
+            # Unknown ids map to -1 so they match no evaluated class
+            class_ids = np.array([self._id_remap.get(int(c), -1) for c in raw_ids], dtype=np.int64)
             out.append(score_maps_from_instances(h, w, np.asarray(masks), confs, class_ids, self.class_names))
         return out
 
@@ -186,7 +192,10 @@ class RfDetrPredictor:
 def load_predictor(checkpoint: str | Path, device: str | None = None):
     p = Path(checkpoint)
     # Track C first: RF-DETR checkpoints are also .pth, so check before the generic Track B route.
-    if _experiment_track(p) == "C" or p.name.lower().startswith("checkpoint_best_") or "rfdetr" in p.name.lower():
+    track = _experiment_track(p)
+    if track == "C" or (
+        track is None and (p.name.lower().startswith("checkpoint_best_") or "rfdetr" in p.name.lower())
+    ):
         return RfDetrPredictor(p, device)
     if p.suffix == ".pth":
         return SemsegPredictor(p, device)
